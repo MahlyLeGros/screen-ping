@@ -1,0 +1,98 @@
+{
+  "name": "screen-ping-desktop",
+  "version": "1.0.61",
+  "description": "Screen Ping desktop receiver",
+  "author": "Screen Ping",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "dev": "npm run build:main && concurrently \"npm run watch:main\" \"vite\" \"wait-on http://localhost:5174 && electron . --vite\"",
+    "watch:main": "tsc -p tsconfig.main.json -w",
+    "start": "electron .",
+    "preview": "npm run build && electron scripts/preview-window.js",
+    "dist": "node scripts/gen-icons.js && npm run build && electron-builder --win --dir && node scripts/stamp-icon.js && node scripts/write-app-update-yml.js && electron-builder --win nsis --prepackaged release/win-unpacked",
+    "pack:dir": "node scripts/gen-icons.js && npm run build && electron-builder --win --dir && node scripts/stamp-icon.js && node scripts/write-app-update-yml.js",
+    "stamp-icon": "node scripts/stamp-icon.js",
+    "write-app-update": "node scripts/write-app-update-yml.js"
+  },
+  "build": {
+    "appId": "com.screenping.app",
+    "productName": "Screen Ping",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Screen Ping",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "protocols": [
+      {
+        "name": "Screen Ping",
+        "schemes": [
+          "screenping"
+        ]
+      }
+    ],
+    "artifactName": "${productName} Setup ${version}.${ext}",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://screenping.xyz/desktop/updates/"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0",
+    "electron-updater": "^6.3.9",
+    "socket.io-client": "^4.8.1"
+  },
+  "devDependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "png-to-ico": "^3.0.2",
+    "rcedit": "^5.0.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  }
+}

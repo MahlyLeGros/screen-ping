@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+
+Disallow: /settings
+Disallow: /legal/acceptance
+Disallow: /api/
+
+Sitemap: https://screenping.xyz/sitemap.xml

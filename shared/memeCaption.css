@@ -1,0 +1,41 @@
+/* Layout helpers — outline is applied inline via memeCaptionTextStyle() in the JS bundle. */
+.meme-caption-box {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  pointer-events: none;
+  padding: 0.35em;
+  box-sizing: border-box;
+}
+
+.layout-canvas {
+  container-type: size;
+}
+
+.meme-caption-measurer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  max-width: 92cqw;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.meme-caption-scale-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.meme-caption-scale-inner {
+  transform-origin: center center;
+  flex-shrink: 0;
+}

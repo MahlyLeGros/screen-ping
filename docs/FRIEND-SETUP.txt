@@ -1,0 +1,50 @@
+Screen Ping - setup for your friend (Windows receiver app)
+==========================================================
+
+WHAT THIS IS
+------------
+Screen Ping shows images, videos, and sounds on your screen when a friend
+sends you a "ping". You need the desktop app running to receive pings.
+
+
+STEP 1 - INSTALL
+----------------
+1. Run: Screen Ping Setup 1.0.0.exe
+2. Follow the installer (you can change the install folder if you want)
+3. Launch "Screen Ping" from the Start menu after install
+
+
+STEP 2 - LOG IN
+---------------
+When the app opens, enter:
+
+  Username    ->  your account name (your friend must create it for you)
+  Password    ->  your password
+
+The app connects automatically to the Screen Ping server.
+No server URL to enter.
+
+The app runs in the system tray (near the clock). Keep it running to stay
+online and receive pings.
+
+
+STEP 3 - ADD EACH OTHER AS FRIENDS
+----------------------------------
+Your friend adds you on the web dashboard (Friends page). You accept the
+request on the same dashboard, or they accept yours.
+
+Both of you must be "friends" before pings can be sent.
+
+
+TIPS
+----
+- Right-click the tray icon to pause pings, go offline, or quit
+- Pings appear on screen for a few seconds then disappear automatically
+- You need an internet connection to the server (same network or over the web)
+
+
+TROUBLESHOOTING
+---------------
+- "Login failed" -> check Server URL, username, and password with your friend
+- Not receiving pings -> make sure the app is running and you show as online
+- Friend can't send -> they need the web dashboard; you need this desktop app
