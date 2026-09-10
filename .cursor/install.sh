@@ -9,6 +9,14 @@ cd "$ROOT"
 echo "== Screen Ping install: server (FastAPI) =="
 cd "$ROOT/server"
 
+# The default base image may lack ensurepip (python3-venv). Install it once if
+# creating a venv would fail. Guarded so it is a no-op when already present.
+if ! python3 -c "import ensurepip" >/dev/null 2>&1; then
+  echo "Installing python3-venv (ensurepip missing)"
+  sudo apt-get update -qq
+  sudo apt-get install -y -qq python3-venv
+fi
+
 # Create the venv once; reuse it on subsequent runs.
 if [ ! -x ".venv/bin/python" ]; then
   python3 -m venv .venv
