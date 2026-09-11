@@ -165,7 +165,7 @@ export default function LoginPage() {
   const pickingGoogleUsername = Boolean(googleCredential);
 
   return (
-    <div className="app-bg app-bg-scroll flex min-h-full flex-col items-center px-3 py-8">
+    <div className="app-bg app-bg-scroll flex min-h-full flex-col items-center justify-center px-3 py-8">
       <SkipLink />
       <main id="main-content" className="w-full max-w-sm space-y-4">
         <div className="panel p-5 sm:p-6">
