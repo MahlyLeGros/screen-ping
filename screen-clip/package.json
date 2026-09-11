@@ -1,0 +1,86 @@
+{
+  "name": "screen-clip",
+  "version": "1.0.0",
+  "description": "Windows instant-replay screen clipper with audio",
+  "author": "Screen Clip",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "dev": "npm run build:main && concurrently \"npm run watch:main\" \"vite\" \"wait-on http://localhost:5175 && electron . --vite\"",
+    "watch:main": "tsc -p tsconfig.main.json -w",
+    "start": "electron .",
+    "test": "npm run build:main && node --test dist/main/*.test.js",
+    "fetch-ffmpeg": "node scripts/fetch-ffmpeg.js",
+    "dist": "npm run fetch-ffmpeg && npm run build && electron-builder --win nsis",
+    "pack:dir": "npm run fetch-ffmpeg && npm run build && electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.screenclip.app",
+    "productName": "Screen Clip",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets",
+        "to": "assets",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "vendor/ffmpeg",
+        "to": "ffmpeg",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "installerIcon": "assets/icon.ico",
+      "installerHeaderIcon": "assets/icon.ico",
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Screen Clip",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "artifactName": "${productName} Setup ${version}.${ext}"
+  },
+  "dependencies": {
+    "electron-store": "^8.2.0"
+  },
+  "devDependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5",
+    "wait-on": "^8.0.1"
+  }
+}
