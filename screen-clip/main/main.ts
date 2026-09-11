@@ -12,7 +12,7 @@ import path from "path";
 import { buildAppState } from "./appState";
 import { bufferRecorder } from "./bufferRecorder";
 import { normalizeEncoding } from "./ffmpegArgs";
-import { probeEncoders } from "./ffmpegPath";
+import { assertFfmpegAvailable, probeEncoders } from "./ffmpegPath";
 import type { VideoEncoderId } from "./store";
 import store, {
   applyLaunchAtLoginDefault,
@@ -214,6 +214,13 @@ async function startApp() {
   applyLaunchAtLoginDefault();
   setupAutoLaunch();
   refreshEncodingWarning();
+
+  try {
+    assertFfmpegAvailable();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    dialog.showErrorBox("Screen Clip — FFmpeg manquant", message);
+  }
 
   availableEncoders = await probeEncoders();
   if (!availableEncoders.includes(store.get("videoEncoder"))) {

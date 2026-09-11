@@ -1,6 +1,6 @@
 {
   "name": "screen-clip",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Windows instant-replay screen clipper with audio",
   "author": "Screen Clip",
   "main": "dist/main/main.js",
@@ -14,7 +14,8 @@
     "test": "npm run build:main && node --test dist/main/*.test.js",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.js",
     "dist": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis",
-    "pack:dir": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --dir"
+    "pack:dir": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --dir",
+    "pack:zip": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win zip"
   },
   "build": {
     "appId": "com.screenclip.app",
@@ -22,6 +23,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "./scripts/afterPack.js",
     "files": [
       "dist/**/*",
       "assets/**/*"
@@ -63,7 +65,7 @@
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false
     },
-    "artifactName": "${productName} Setup ${version}.${ext}"
+    "artifactName": "${productName}-${version}-${os}.${ext}"
   },
   "dependencies": {
     "electron-store": "^8.2.0"

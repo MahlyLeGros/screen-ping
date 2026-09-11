@@ -10,7 +10,7 @@ import {
   segmentCountForBuffer,
   type CaptureGeometry,
 } from "./ffmpegArgs";
-import { resolveFfmpegPath } from "./ffmpegPath";
+import { assertFfmpegAvailable } from "./ffmpegPath";
 import {
   formatClipFilename,
   pruneSegments,
@@ -113,7 +113,14 @@ export class BufferRecorder {
       segmentTimeSec: SEGMENT_TIME,
     });
 
-    const ffmpeg = resolveFfmpegPath();
+    let ffmpeg: string;
+    try {
+      ffmpeg = assertFfmpegAvailable();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.setState({ status: "error", lastError: message });
+      return;
+    }
     this.intentionalStop = false;
 
     try {
@@ -129,6 +136,17 @@ export class BufferRecorder {
 
     const proc = this.proc;
     if (!proc) return;
+
+    // Without this listener, spawn ENOENT becomes an uncaught exception and kills Electron.
+    proc.on("error", (err) => {
+      this.proc = null;
+      this.setState({
+        status: "error",
+        lastError: err.message.includes("ENOENT")
+          ? `ffmpeg.exe introuvable (${ffmpeg})`
+          : err.message,
+      });
+    });
 
     let stderr = "";
     proc.stderr?.on("data", (chunk: Buffer) => {
@@ -222,7 +240,7 @@ export class BufferRecorder {
       const listPath = path.join(segmentDir(), "concat.txt");
       writeConcatList(usable, listPath);
 
-      const ffmpeg = resolveFfmpegPath();
+      const ffmpeg = assertFfmpegAvailable();
       const args = buildRemuxArgs(listPath, outputPath);
 
       await new Promise<void>((resolve, reject) => {
@@ -231,7 +249,8 @@ export class BufferRecorder {
           windowsHide: true,
         });
         let err = "";
-        child.stderr.on("data", (c: Buffer) => {
+        child.on("error", (e) => reject(e));
+        child.stderr?.on("data", (c: Buffer) => {
           err += c.toString("utf8");
         });
         child.on("exit", (code) => {

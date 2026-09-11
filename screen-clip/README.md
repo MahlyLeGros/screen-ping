@@ -36,15 +36,18 @@ npm run dist
 Or from repo root: `build-clip-installer.bat`
 
 Outputs in `screen-clip/release/`:
-- `Screen Clip Setup *.exe` — NSIS installer (needs Wine if building on Linux)
-- `Screen Clip Setup *.zip` — portable Windows build (unzip and run `Screen Clip.exe`)
+- `Screen-Clip-*-win.exe` — NSIS installer (needs Wine if building on Linux)
+- `Screen-Clip-*-win.zip` — portable Windows build (unzip the **whole** folder, then run `Screen Clip.exe`)
 
 On Linux CI/agents, prefer the zip target if NSIS/Wine is unavailable:
 
 ```bash
-FORCE_FFMPEG_WIN=1 npm run build
-CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win zip
+npm run pack:zip
 ```
+
+### Important (portable zip)
+
+Keep `Screen Clip.exe` **in the extracted folder**. Do not move only the `.exe` to the Desktop — `resources/ffmpeg/ffmpeg.exe` must stay next to it (a second `ffmpeg.exe` is also copied beside the app). Moving only the exe causes `spawn ffmpeg.exe ENOENT`.
 
 ## Manual Windows test checklist
 
