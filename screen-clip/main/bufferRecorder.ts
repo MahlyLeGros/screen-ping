@@ -117,12 +117,15 @@ export class BufferRecorder {
       return;
     }
 
+    // Immediate UI feedback — never leave the tray looking dead while probing devices.
+    this.setState({ status: "running", lastError: "Starting buffer…" });
+
     let systemAudioDevice: string | null = null;
     let micDeviceName: string | null = null;
     let audioWarning: string | null = null;
     if (process.platform === "win32" && (settings.includeSystemAudio || settings.includeMic)) {
       try {
-        const devices = await probeWinAudioDevices(ffmpeg);
+        const devices = await probeWinAudioDevices(ffmpeg, { timeoutMs: 2500 });
         systemAudioDevice = settings.includeSystemAudio ? devices.systemLoopback : null;
         micDeviceName = settings.includeMic ? devices.microphone : null;
         audioWarning = devices.warning;

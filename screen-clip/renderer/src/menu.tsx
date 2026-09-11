@@ -30,8 +30,17 @@ function MenuItem({
   danger?: boolean;
   onClick: () => void;
 }) {
+  // onMouseDown: Windows tray popups can blur/hide before click fires.
   return (
-    <button type="button" className={`menu__item${danger ? " menu__item--danger" : ""}`} onClick={onClick}>
+    <button
+      type="button"
+      className={`menu__item${danger ? " menu__item--danger" : ""}`}
+      onMouseDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        onClick();
+      }}
+    >
       <span className="menu__item-icon">{icon}</span>
       <span className="menu__item-text">{label}</span>
       {hint && (
@@ -118,7 +127,10 @@ function Menu() {
           label={running ? "Pause buffer" : "Resume buffer"}
           hint={running ? "ON" : "OFF"}
           hintTone={running ? "on" : "warn"}
-          onClick={() => window.clipAPI.action(running ? "pause-buffer" : "resume-buffer")}
+          onClick={() => {
+            window.clipAPI.action(running ? "pause-buffer" : "resume-buffer");
+            window.clipAPI.hideMenu();
+          }}
         />
         <MenuItem icon={<IconSettings />} label="Settings" onClick={() => window.clipAPI.action("open-settings")} />
         <MenuItem

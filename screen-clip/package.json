@@ -1,6 +1,6 @@
 {
   "name": "screen-clip",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Windows instant-replay screen clipper with audio",
   "author": "Screen Clip",
   "main": "dist/main/main.js",

@@ -1,7 +1,4 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
+import { execFile, type ExecFileException } from "child_process";
 
 export interface WinAudioDevices {
   systemLoopback: string | null;
@@ -22,6 +19,9 @@ const LOOPBACK_PATTERNS = [
 ];
 
 const MIC_PATTERNS = [/microphone/i, /\bmic\b/i, /headset/i, /array/i];
+
+let cached: WinAudioDevices | null = null;
+let inflight: Promise<WinAudioDevices> | null = null;
 
 export function parseDshowAudioDevices(stderr: string): string[] {
   const names: string[] = [];
@@ -48,33 +48,66 @@ export function pickMicDevice(devices: string[], exclude: string | null): string
   return candidates[0] ?? null;
 }
 
-/**
- * Probe Windows DirectShow audio devices via bundled FFmpeg.
- * System audio requires Stereo Mix / VB-Cable / similar.
- */
-export async function probeWinAudioDevices(ffmpegPath: string): Promise<WinAudioDevices> {
-  let stderr = "";
-  try {
-    const result = await execFileAsync(
-      ffmpegPath,
-      ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
-      { encoding: "utf8", timeout: 15000, windowsHide: true },
-    );
-    stderr = `${result.stdout}\n${result.stderr}`;
-  } catch (err: unknown) {
-    const e = err as { stderr?: string; stdout?: string };
-    stderr = `${e.stdout || ""}\n${e.stderr || ""}`;
-  }
+export function clearWinAudioCache() {
+  cached = null;
+}
 
+function fromStderr(stderr: string): WinAudioDevices {
   const allAudio = parseDshowAudioDevices(stderr);
   const systemLoopback = pickLoopbackDevice(allAudio);
   const microphone = pickMicDevice(allAudio, systemLoopback);
-
   let warning: string | null = null;
   if (!systemLoopback) {
     warning =
       "No system-audio loopback device found (enable Stereo Mix, or install VB-Cable). Capturing video only.";
   }
-
   return { systemLoopback, microphone, allAudio, warning };
+}
+
+/**
+ * Probe Windows DirectShow audio devices via bundled FFmpeg.
+ * Cached after first successful probe. Hard-capped so Resume never hangs the UI.
+ */
+export async function probeWinAudioDevices(
+  ffmpegPath: string,
+  opts: { timeoutMs?: number; forceRefresh?: boolean } = {},
+): Promise<WinAudioDevices> {
+  const timeoutMs = opts.timeoutMs ?? 2500;
+  if (!opts.forceRefresh && cached) return cached;
+  if (inflight) return inflight;
+
+  inflight = new Promise<WinAudioDevices>((resolve) => {
+    const child = execFile(
+      ffmpegPath,
+      ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"],
+      { encoding: "utf8", windowsHide: true, maxBuffer: 2 * 1024 * 1024 },
+      (err: ExecFileException | null, stdout: string, stderr: string) => {
+        clearTimeout(timer);
+        const text = `${stdout || ""}\n${stderr || ""}\n${err?.message || ""}`;
+        const result = fromStderr(text);
+        cached = result;
+        inflight = null;
+        resolve(result);
+      },
+    );
+
+    const timer = setTimeout(() => {
+      try {
+        child.kill();
+      } catch {
+        /* ignore */
+      }
+      if (!cached) {
+        cached = fromStderr("");
+        if (!cached.warning) {
+          cached.warning =
+            "Audio device probe timed out — starting video-only. Enable Stereo Mix / VB-Cable for sound.";
+        }
+      }
+      inflight = null;
+      resolve(cached);
+    }, timeoutMs);
+  });
+
+  return inflight;
 }

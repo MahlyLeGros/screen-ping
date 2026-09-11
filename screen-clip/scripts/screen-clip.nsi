@@ -2,7 +2,7 @@
 !include "FileFunc.nsh"
 
 Name "Screen Clip"
-OutFile "/workspace/screen-clip/release/ScreenClip-Setup-1.0.2.exe"
+OutFile "/workspace/screen-clip/release/ScreenClip-Setup-1.0.3.exe"
 Unicode True
 InstallDir "$LOCALAPPDATA\Programs\Screen Clip"
 InstallDirRegKey HKCU "Software\Screen Clip" "InstallDir"
@@ -35,7 +35,7 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "UninstallString" "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "DisplayIcon" "$INSTDIR\Screen Clip.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "Publisher" "Screen Clip"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "DisplayVersion" "1.0.2"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "DisplayVersion" "1.0.3"
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\ScreenClip" "EstimatedSize" "$0"

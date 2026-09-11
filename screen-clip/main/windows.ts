@@ -72,8 +72,22 @@ export function ensureMenuWindow(): BrowserWindow {
     },
   });
   void menuWindow.loadURL(rendererUrl("menu"));
+  // Delay hide so button clicks fire before blur closes the popup (Windows tray UX).
+  let blurTimer: NodeJS.Timeout | null = null;
   menuWindow.on("blur", () => {
-    if (menuWindow && !menuWindow.isDestroyed()) menuWindow.hide();
+    if (blurTimer) clearTimeout(blurTimer);
+    blurTimer = setTimeout(() => {
+      blurTimer = null;
+      if (menuWindow && !menuWindow.isDestroyed() && !menuWindow.isFocused()) {
+        menuWindow.hide();
+      }
+    }, 180);
+  });
+  menuWindow.on("focus", () => {
+    if (blurTimer) {
+      clearTimeout(blurTimer);
+      blurTimer = null;
+    }
   });
   menuWindow.on("closed", () => {
     menuWindow = null;
