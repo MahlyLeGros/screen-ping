@@ -55,7 +55,7 @@ test("segmentCountForBuffer keeps spare segment", () => {
   assert.ok(segmentCountForBuffer(15, 5) >= 2);
 });
 
-test("buildCaptureArgs includes bitrate, fps, and scale on win32", () => {
+test("buildCaptureArgs includes bitrate, fps, scale, and dshow system audio on win32", () => {
   const args = buildCaptureArgs({
     settings: settings({
       fps: 60,
@@ -68,13 +68,28 @@ test("buildCaptureArgs includes bitrate, fps, and scale on win32", () => {
     segmentPattern: "seg_%05d.mkv",
     segmentTimeSec: 5,
     platform: "win32",
+    systemAudioDevice: "Stereo Mix (Realtek)",
   });
   assert.ok(args.includes("gdigrab"));
-  assert.ok(args.includes("wasapi"));
-  assert.ok(args.includes("loopback"));
+  assert.ok(args.includes("dshow"));
+  assert.ok(args.includes("audio=Stereo Mix (Realtek)"));
+  assert.ok(!args.includes("wasapi"));
   assert.ok(args.includes("6000k"));
   assert.ok(args.some((a) => a.includes("scale=1280:720")));
   assert.ok(args.includes("segment"));
+});
+
+test("buildCaptureArgs skips system audio when no loopback device is provided", () => {
+  const args = buildCaptureArgs({
+    settings: settings({ includeSystemAudio: true, includeMic: false }),
+    geometry: { offsetX: 0, offsetY: 0, width: 1920, height: 1080 },
+    segmentPattern: "seg_%05d.mkv",
+    platform: "win32",
+    systemAudioDevice: null,
+  });
+  assert.ok(args.includes("gdigrab"));
+  assert.ok(!args.includes("dshow"));
+  assert.ok(args.includes("-an"));
 });
 
 test("buildRemuxArgs copies streams into output", () => {

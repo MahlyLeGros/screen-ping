@@ -11,6 +11,7 @@ import {
   type CaptureGeometry,
 } from "./ffmpegArgs";
 import { assertFfmpegAvailable } from "./ffmpegPath";
+import { probeWinAudioDevices } from "./winAudio";
 import {
   formatClipFilename,
   pruneSegments,
@@ -106,12 +107,6 @@ export class BufferRecorder {
 
     const segmentPattern = path.join(segmentDir(), "seg_%05d.mkv");
     const geometry = grabGeometry(settings.displayId);
-    const args = buildCaptureArgs({
-      settings,
-      geometry,
-      segmentPattern,
-      segmentTimeSec: SEGMENT_TIME,
-    });
 
     let ffmpeg: string;
     try {
@@ -121,51 +116,118 @@ export class BufferRecorder {
       this.setState({ status: "error", lastError: message });
       return;
     }
-    this.intentionalStop = false;
 
-    try {
-      this.proc = spawn(ffmpeg, args, {
+    let systemAudioDevice: string | null = null;
+    let micDeviceName: string | null = null;
+    let audioWarning: string | null = null;
+    if (process.platform === "win32" && (settings.includeSystemAudio || settings.includeMic)) {
+      try {
+        const devices = await probeWinAudioDevices(ffmpeg);
+        systemAudioDevice = settings.includeSystemAudio ? devices.systemLoopback : null;
+        micDeviceName = settings.includeMic ? devices.microphone : null;
+        audioWarning = devices.warning;
+        if (settings.includeSystemAudio && !systemAudioDevice) {
+          audioWarning =
+            devices.warning ||
+            "System audio unavailable — enable Stereo Mix or install VB-Cable. Recording video only.";
+        }
+        if (settings.includeMic && !micDeviceName) {
+          audioWarning = (audioWarning ? audioWarning + " " : "") + "No microphone DirectShow device found.";
+        }
+      } catch (err) {
+        audioWarning = err instanceof Error ? err.message : String(err);
+        systemAudioDevice = null;
+        micDeviceName = null;
+      }
+    }
+
+    const spawnCapture = (forceNoSystemAudio: boolean, forceNoMic: boolean) => {
+      const args = buildCaptureArgs({
+        settings,
+        geometry,
+        segmentPattern,
+        segmentTimeSec: SEGMENT_TIME,
+        systemAudioDevice,
+        micDeviceName,
+        forceNoSystemAudio,
+        forceNoMic,
+      });
+      return spawn(ffmpeg, args, {
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
       });
+    };
+
+    this.intentionalStop = false;
+
+    let usedFallback = false;
+    try {
+      this.proc = spawnCapture(false, false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.setState({ status: "error", lastError: message });
       return;
     }
 
-    const proc = this.proc;
-    if (!proc) return;
-
-    // Without this listener, spawn ENOENT becomes an uncaught exception and kills Electron.
-    proc.on("error", (err) => {
-      this.proc = null;
-      this.setState({
-        status: "error",
-        lastError: err.message.includes("ENOENT")
-          ? `ffmpeg.exe introuvable (${ffmpeg})`
-          : err.message,
-      });
-    });
-
-    let stderr = "";
-    proc.stderr?.on("data", (chunk: Buffer) => {
-      stderr = (stderr + chunk.toString("utf8")).slice(-4000);
-    });
-    proc.on("exit", (code) => {
-      this.proc = null;
-      if (this.intentionalStop) return;
-      if (code && code !== 0) {
+    const attachProcess = (proc: ChildProcess, allowAudioFallback: boolean) => {
+      // Without this listener, spawn ENOENT becomes an uncaught exception and kills Electron.
+      proc.on("error", (err) => {
+        this.proc = null;
         this.setState({
           status: "error",
-          lastError: stderr.trim() || `FFmpeg exited with code ${code}`,
+          lastError: err.message.includes("ENOENT")
+            ? `ffmpeg.exe introuvable (${ffmpeg})`
+            : err.message,
         });
-      } else if (this.state.status === "running") {
-        this.setState({ status: "stopped" });
-      }
-    });
+      });
 
-    this.setState({ status: "running", lastError: null });
+      let stderr = "";
+      proc.stderr?.on("data", (chunk: Buffer) => {
+        stderr = (stderr + chunk.toString("utf8")).slice(-4000);
+      });
+      proc.on("exit", (code) => {
+        this.proc = null;
+        if (this.intentionalStop) return;
+        if (code && code !== 0) {
+          const errText = stderr.trim() || `FFmpeg exited with code ${code}`;
+          const audioFailed =
+            allowAudioFallback &&
+            !usedFallback &&
+            (settings.includeSystemAudio || settings.includeMic) &&
+            /dshow|audio|wasapi|device|IAudio|HRESULT|Could not find/i.test(errText);
+          if (audioFailed) {
+            usedFallback = true;
+            try {
+              this.intentionalStop = false;
+              this.proc = spawnCapture(true, true);
+              if (this.proc) {
+                attachProcess(this.proc, false);
+                this.setState({
+                  status: "running",
+                  lastError:
+                    "Audio capture failed — buffer running without sound. Enable Stereo Mix / VB-Cable for system audio.",
+                });
+                return;
+              }
+            } catch {
+              /* fall through to error */
+            }
+          }
+          this.setState({ status: "error", lastError: errText });
+        } else if (this.state.status === "running") {
+          this.setState({ status: "stopped" });
+        }
+      });
+    };
+
+    const proc = this.proc;
+    if (!proc) return;
+    attachProcess(proc, true);
+
+    this.setState({
+      status: "running",
+      lastError: audioWarning,
+    });
 
     if (this.pruneTimer) clearInterval(this.pruneTimer);
     this.pruneTimer = setInterval(() => {

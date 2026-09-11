@@ -1575,6 +1575,20 @@ body.menu-body {
 }
 .menu__status { color: var(--text-dim); font: 500 12px/1 var(--font-sans); }
 .menu__status-meta { margin-left: auto; color: var(--text-faint); }
+.menu__error {
+  margin: 0 12px 6px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(255, 120, 80, 0.12);
+  color: #ffb199;
+  font: 500 11px/1.35 var(--font-sans);
+  max-height: 4.2em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
+}
 .menu__list { padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .menu__item {
   display: flex; align-items: center; gap: 10px;

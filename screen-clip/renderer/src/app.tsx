@@ -267,6 +267,10 @@ function App() {
                   green
                 />
               </Field>
+              <p className="hint">
+                Needs a Windows loopback device (enable Stereo Mix in Sound settings, or install VB-Cable).
+                Without it, the buffer still runs (video only).
+              </p>
               <Field label="Microphone">
                 <Toggle value={settings.includeMic} onChange={(v) => setSetting("includeMic", v)} />
               </Field>

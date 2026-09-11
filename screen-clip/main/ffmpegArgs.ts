@@ -125,7 +125,14 @@ export interface BuildCaptureOptions {
   segmentPattern: string;
   segmentTimeSec?: number;
   platform?: NodeJS.Platform;
-  micDeviceName?: string;
+  /** DirectShow device name for system loopback (Stereo Mix / VB-Cable). */
+  systemAudioDevice?: string | null;
+  /** DirectShow microphone device name. */
+  micDeviceName?: string | null;
+  /** Force-disable system audio even if settings ask for it (fallback path). */
+  forceNoSystemAudio?: boolean;
+  /** Force-disable mic even if settings ask for it (fallback path). */
+  forceNoMic?: boolean;
 }
 
 /**
@@ -161,12 +168,22 @@ export function buildCaptureArgs(opts: BuildCaptureOptions): string[] {
   }
 
   let audioInputs = 0;
-  if (settings.includeSystemAudio && platform === "win32") {
-    args.push("-f", "wasapi", "-i", "loopback");
+  // Stock FFmpeg builds do not ship a working WASAPI demuxer. Use DirectShow instead.
+  // System audio needs a loopback device (Stereo Mix / VB-Cable / VoiceMeeter).
+  const wantSystem =
+    platform === "win32" &&
+    settings.includeSystemAudio &&
+    !opts.forceNoSystemAudio &&
+    !!opts.systemAudioDevice;
+  const wantMic =
+    platform === "win32" && settings.includeMic && !opts.forceNoMic && !!opts.micDeviceName;
+
+  if (wantSystem) {
+    args.push("-f", "dshow", "-i", `audio=${opts.systemAudioDevice}`);
     audioInputs += 1;
   }
-  if (settings.includeMic && platform === "win32") {
-    args.push("-f", "wasapi", "-i", opts.micDeviceName || "default");
+  if (wantMic) {
+    args.push("-f", "dshow", "-i", `audio=${opts.micDeviceName}`);
     audioInputs += 1;
   }
 

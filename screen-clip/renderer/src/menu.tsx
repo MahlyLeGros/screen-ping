@@ -101,6 +101,11 @@ function Menu() {
         <span>{statusText}</span>
         <span className="menu__status-meta">{state.settings.bufferSeconds}s</span>
       </div>
+      {state.buffer.lastError && (
+        <div className="menu__error" title={state.buffer.lastError}>
+          {state.buffer.lastError}
+        </div>
+      )}
       <div className="menu__list">
         <MenuItem
           icon={<IconRefresh />}
