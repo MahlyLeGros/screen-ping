@@ -13,8 +13,8 @@
     "start": "electron .",
     "test": "npm run build:main && node --test dist/main/*.test.js",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.js",
-    "dist": "npm run fetch-ffmpeg && npm run build && electron-builder --win nsis",
-    "pack:dir": "npm run fetch-ffmpeg && npm run build && electron-builder --win --dir"
+    "dist": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis",
+    "pack:dir": "node -e \"process.env.FORCE_FFMPEG_WIN='1';require('child_process').execSync('node scripts/fetch-ffmpeg.js',{stdio:'inherit',env:process.env})\" && npm run build && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --dir"
   },
   "build": {
     "appId": "com.screenclip.app",
@@ -44,7 +44,8 @@
     ],
     "win": {
       "target": [
-        "nsis"
+        "nsis",
+        "zip"
       ],
       "icon": "assets/icon.ico",
       "signAndEditExecutable": false

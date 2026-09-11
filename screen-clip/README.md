@@ -33,8 +33,18 @@ npm run dev
 npm run dist
 ```
 
-Or from repo root: `build-clip-installer.bat`  
-Installer lands in `screen-clip/release/`.
+Or from repo root: `build-clip-installer.bat`
+
+Outputs in `screen-clip/release/`:
+- `Screen Clip Setup *.exe` — NSIS installer (needs Wine if building on Linux)
+- `Screen Clip Setup *.zip` — portable Windows build (unzip and run `Screen Clip.exe`)
+
+On Linux CI/agents, prefer the zip target if NSIS/Wine is unavailable:
+
+```bash
+FORCE_FFMPEG_WIN=1 npm run build
+CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --win zip
+```
 
 ## Manual Windows test checklist
 
