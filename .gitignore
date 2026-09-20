@@ -13,6 +13,8 @@ server/uploads/*
 !server/uploads/.gitkeep
 data/
 .env
+deploy/update-signing-private.pem
+deploy/update-signing-private.rar
 deploy/deploy.config.ps1
 desktop/USE_LOCAL_SERVER
 *.zip

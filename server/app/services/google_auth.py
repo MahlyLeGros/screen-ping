@@ -128,7 +128,7 @@ def complete_google_auth(
             db.commit()
 
     if user:
-        access_token, refresh_token = issue_tokens(user)
+        access_token, refresh_token = issue_tokens(db, user)
         return GoogleAuthResponse(access_token=access_token, refresh_token=refresh_token)
 
     suggested = suggest_username(email, db)
@@ -165,5 +165,5 @@ def complete_google_auth(
     db.add(user)
     db.commit()
     db.refresh(user)
-    access_token, refresh_token = issue_tokens(user)
+    access_token, refresh_token = issue_tokens(db, user)
     return GoogleAuthResponse(access_token=access_token, refresh_token=refresh_token)

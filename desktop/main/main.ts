@@ -15,7 +15,7 @@ if (process.platform === "win32") {
 import store, { applyLaunchAtLoginDefault, clearSessionTokens } from "./store";
 import { OverlayQueue } from "./overlayQueue";
 import { drawOverlay } from "./drawOverlay";
-import { clearLoginCredentials, cancelBrowserLogin, getSavedLoginForm, loginAndRemember, loginViaBrowser, tryRestoreSession } from "./auth";
+import { clearLoginCredentials, cancelBrowserLogin, getSavedLoginForm, loginAndRemember, loginViaBrowser, revokeCurrentSession, tryRestoreSession } from "./auth";
 import { ackMessage, connectSocket, disconnectSocket, isConnected, sendMessage, setFriendsUpdateHandler, setPresenceHandler, setSessionExpiredHandler } from "./socketClient";
 import {
   acceptFriend,
@@ -287,8 +287,9 @@ function scheduleStartupReconnect() {
   }
 }
 
-function handleLogout() {
+async function handleLogout() {
   disconnectSocket();
+  await revokeCurrentSession();
   clearSessionTokens();
   clearLoginCredentials();
   setCachedUserId(null);

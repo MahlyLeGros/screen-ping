@@ -11,7 +11,7 @@ from fastapi import HTTPException, UploadFile, status
 from PIL import Image, ImageOps
 
 from app.config import settings
-from app.services.media import ALLOWED_IMAGE, _extension_for_mime, sniff_media_mime
+from app.services.media import ALLOWED_IMAGE, _extension_for_mime, read_upload_limited, sniff_media_mime
 from app.services.ping_limits import (
     COMPOSE_CANVAS_HEIGHT,
     COMPOSE_CANVAS_WIDTH,
@@ -169,7 +169,7 @@ def compose_layers(layers: list[tuple[bytes, dict[str, Any]]]) -> bytes:
 
 
 async def read_layer_upload(file: UploadFile) -> tuple[bytes, str]:
-    content = await file.read()
+    content = await read_upload_limited(file, settings.max_image_bytes)
     if not content:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty layer file")
     mime = sniff_media_mime(content)

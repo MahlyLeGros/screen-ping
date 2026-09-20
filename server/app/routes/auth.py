@@ -4,10 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.auth import (
     bump_token_version,
+    create_access_token,
     decode_token,
     get_current_user,
     hash_password,
     issue_tokens,
+    rotate_refresh_token,
+    revoke_refresh_token,
     verify_password,
 )
 from app.auth_cookies import (
@@ -20,7 +23,7 @@ from app.auth_cookies import (
 from app.config import settings
 from app.database import get_db
 from app.models import EmailVerificationPurpose, User
-from app.models import DeviceSession, EmailVerification, Friendship, MediaMessage, utcnow
+from app.models import DeviceSession, EmailVerification, Friendship, MediaMessage, RefreshSession, utcnow
 from app.realtime import check_login_rate_limit, presence_manager, check_reset_password_rate_limit
 from app.schemas import (
     AuthProvidersResponse,
@@ -49,6 +52,8 @@ from app.schemas import (
 )
 from app.services.desktop_link import approve_desktop_link, deny_desktop_link, poll_desktop_link, start_desktop_link
 from app.services.google_auth import complete_google_auth, verify_google_credential
+from app.services.media import delete_avatar_files
+from app.services.media_access import delete_upload_file, media_paths_for_message
 from app.services.verification import (
     consume_verification,
     count_recent_verifications,
@@ -176,10 +181,11 @@ def _token_response(
     request: Request,
     response: Response,
     user: User,
+    db: Session,
     *,
     remember_me: bool | None = None,
 ) -> TokenResponse:
-    access_token, refresh_token = issue_tokens(user)
+    access_token, refresh_token = issue_tokens(db, user)
     if is_desktop_client(request):
         return TokenResponse(access_token=access_token, refresh_token=refresh_token)
     persist = resolve_persist(request, remember_me)
@@ -247,14 +253,14 @@ def verify_email(body: VerifyEmailRequest, request: Request, response: Response,
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
     if _email_verified(user):
-        return _token_response(request, response, user, remember_me=body.remember_me)
+        return _token_response(request, response, user, db, remember_me=body.remember_me)
     try:
         consume_verification(db, user=user, purpose=EmailVerificationPurpose.signup, code=body.code)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     user.email_verified_at = utcnow()
     db.commit()
-    return _token_response(request, response, user, remember_me=body.remember_me)
+    return _token_response(request, response, user, db, remember_me=body.remember_me)
 
 
 @router.post("/resend-signup-code", response_model=VerificationRequestResponse)
@@ -303,7 +309,7 @@ def login(body: LoginRequest, request: Request, response: Response, db: Session 
                 "email": user.email,
             },
         )
-    return _token_response(request, response, user, remember_me=body.remember_me)
+    return _token_response(request, response, user, db, remember_me=body.remember_me)
 
 
 @router.post("/refresh", response_model=TokenResponse, response_model_exclude_none=True)
@@ -314,17 +320,18 @@ def refresh(
     db: Session = Depends(get_db),
 ):
     refresh_token = read_refresh_token(request, body.refresh_token if body else None)
-    payload = decode_token(refresh_token, expected_type="refresh")
-    user = db.get(User, payload["sub"])
-    if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    if payload.get("tv", 0) != int(getattr(user, "token_version", 0) or 0):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token revoked")
-    return _token_response(request, response, user)
+    user, rotated = rotate_refresh_token(db, refresh_token)
+    access_token = create_access_token(user.id, int(getattr(user, "token_version", 0) or 0))
+    if is_desktop_client(request):
+        return TokenResponse(access_token=access_token, refresh_token=rotated)
+    set_refresh_cookie(response, rotated, persist=resolve_persist(request))
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/logout", response_model=OkResponse)
-def logout(request: Request, response: Response):
+def logout(request: Request, response: Response, body: RefreshRequest | None = None, db: Session = Depends(get_db)):
+    token = body.refresh_token if is_desktop_client(request) and body else request.cookies.get("screenping_refresh")
+    revoke_refresh_token(db, token)
     if not is_desktop_client(request):
         clear_refresh_cookie(response)
     return OkResponse(message="Logged out.")
@@ -364,7 +371,7 @@ def reset_password(body: ResetPasswordRequest, request: Request, response: Respo
     user.password_hash = hash_password(body.new_password)
     bump_token_version(user)
     db.commit()
-    return _token_response(request, response, user, remember_me=body.remember_me)
+    return _token_response(request, response, user, db, remember_me=body.remember_me)
 
 
 @router.post("/me/request-verification", response_model=VerificationRequestResponse)
@@ -457,6 +464,10 @@ def delete_account(
     if not verify_password(body.current_password, current_user.password_hash):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
 
+    messages = db.query(MediaMessage).filter(
+        (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)
+    ).all()
+    media_paths = {path for message in messages for path in media_paths_for_message(message)}
     db.query(MediaMessage).filter(
         (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)
     ).delete(synchronize_session=False)
@@ -467,8 +478,12 @@ def delete_account(
     ).delete(synchronize_session=False)
     db.query(EmailVerification).filter(EmailVerification.user_id == current_user.id).delete(synchronize_session=False)
     db.query(DeviceSession).filter(DeviceSession.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(RefreshSession).filter(RefreshSession.user_id == current_user.id).delete(synchronize_session=False)
     db.delete(current_user)
     db.commit()
+    delete_avatar_files(current_user.id)
+    for media_path in media_paths:
+        delete_upload_file(media_path)
     if not is_desktop_client(request):
         clear_refresh_cookie(response)
     return OkResponse(message="Account deleted.")

@@ -1,4 +1,9 @@
 services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    restart: unless-stopped
+
   db:
     image: postgres:16-alpine
     environment:
@@ -25,11 +30,14 @@ services:
       CORS_ORIGINS: http://localhost:5173,http://localhost,https://screenping.xyz,https://www.screenping.xyz
       SERVE_SPA: "false"
       ENABLE_API_DOCS: "false"
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./server:/app
       # Host folder survives container recreate / `docker compose down -v`.
       - ./data/uploads:/app/uploads
     depends_on:
+      redis:
+        condition: service_started
       db:
         condition: service_healthy
 

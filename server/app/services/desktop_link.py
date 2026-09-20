@@ -99,7 +99,7 @@ def poll_desktop_link(db: Session, pairing_id: str, poll_secret: str) -> dict:
         db.commit()
         return {"status": "denied"}
 
-    access_token, refresh_token = issue_tokens(user)
+    access_token, refresh_token = issue_tokens(db, user)
     link.consumed_at = now
     db.commit()
     return {

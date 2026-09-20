@@ -1,4 +1,5 @@
 import Store from "electron-store";
+import { safeStorage } from "electron";
 
 import { DEFAULT_SERVER_URL } from "./serverUrl";
 
@@ -42,6 +43,9 @@ const store = new Store<AppSettings>({
  * it again so a deliberate opt-out still sticks.
  */
 export function applyLaunchAtLoginDefault() {
+  // Remove passwords saved by older releases; refresh tokens keep sessions
+  // persistent without retaining reusable account credentials.
+  store.delete("savedPasswordEnc");
   if (store.get("launchAtLoginDefaulted")) return;
   store.set("launchAtLogin", true);
   store.set("launchAtLoginDefaulted", true);
@@ -59,6 +63,41 @@ export function setStoredValue<K extends keyof AppSettings>(key: K, value: AppSe
 export function clearSessionTokens() {
   store.delete("accessToken");
   store.delete("refreshToken");
+}
+
+const SECRET_PREFIX = "enc:v1:";
+
+export function setRefreshToken(value: string | null | undefined) {
+  if (!value) {
+    store.delete("refreshToken");
+    return;
+  }
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error("Windows secure storage is unavailable; the session cannot be saved safely.");
+  }
+  const encrypted = safeStorage.encryptString(value).toString("base64");
+  store.set("refreshToken", `${SECRET_PREFIX}${encrypted}`);
+}
+
+export function getRefreshToken(): string | null {
+  const stored = store.get("refreshToken");
+  if (!stored) return null;
+  if (!stored.startsWith(SECRET_PREFIX)) {
+    // One-time migration from releases that stored the refresh token directly.
+    try {
+      setRefreshToken(stored);
+      return stored;
+    } catch {
+      store.delete("refreshToken");
+      return null;
+    }
+  }
+  try {
+    return safeStorage.decryptString(Buffer.from(stored.slice(SECRET_PREFIX.length), "base64"));
+  } catch {
+    store.delete("refreshToken");
+    return null;
+  }
 }
 
 export function clearSavedCredentials() {

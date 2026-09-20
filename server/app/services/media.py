@@ -67,6 +67,21 @@ BLOCKED_UPLOAD_EXTENSIONS = {
 }
 
 
+async def read_upload_limited(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload with a hard cap instead of trusting multipart metadata."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(settings.upload_chunk_bytes)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def sniff_media_mime(content: bytes) -> str | None:
     """Detect media type from file header bytes (ignores client Content-Type)."""
     if len(content) < 4:
@@ -151,7 +166,9 @@ def _extension_for_mime(mime: str) -> str:
 
 
 async def save_upload(file: UploadFile, force_audio: bool = False) -> tuple[str, str, str]:
-    content = await file.read()
+    content = await read_upload_limited(
+        file, max(settings.max_image_bytes, settings.max_video_bytes, settings.max_audio_bytes)
+    )
     mime = sniff_media_mime(content)
     if mime is None:
         raise HTTPException(
@@ -287,7 +304,7 @@ async def apply_avatar_upload(file: UploadFile, user, db):
 
 
 async def save_avatar(file: UploadFile, user_id: str) -> str:
-    content = await file.read()
+    content = await read_upload_limited(file, settings.max_avatar_bytes)
     mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "application/octet-stream"
     if mime not in ALLOWED_IMAGE:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Avatar must be an image (JPEG, PNG, GIF, WebP)")
@@ -296,3 +313,8 @@ async def save_avatar(file: UploadFile, user_id: str) -> str:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar too large (max 2MB)")
 
     return persist_avatar_file(user_id, content)
+
+
+def delete_avatar_files(user_id: str) -> None:
+    for path in _avatars_dir().glob(f"{user_id}.*"):
+        path.unlink(missing_ok=True)

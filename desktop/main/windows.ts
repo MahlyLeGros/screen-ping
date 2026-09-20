@@ -1,7 +1,7 @@
 import { app, BrowserWindow, screen } from "electron";
 import path from "path";
 import { labelDisplays } from "./displayLayout";
-import store, { setStoredValue } from "./store";
+import store, { getRefreshToken, setRefreshToken } from "./store";
 import { ensureOverlayShown } from "./win32Overlay";
 import { getAssetPath, loadAppIcon } from "./assetsPath";
 
@@ -123,6 +123,11 @@ function applyWindowIcon(win: BrowserWindow, appIcon: Electron.NativeImage) {
 }
 
 function loadRenderer(win: BrowserWindow, page: "login" | "app" | "overlay" | "menu" | "update") {
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, targetUrl) => {
+    const allowedDev = useViteDev && targetUrl.startsWith("http://localhost:5174/");
+    if (!targetUrl.startsWith("file://") && !allowedDev) event.preventDefault();
+  });
   if (useViteDev) {
     win.loadURL(`http://localhost:5174/${page}.html`);
     return;
@@ -146,6 +151,7 @@ export function createLoginWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -176,6 +182,7 @@ export function createMainWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -210,6 +217,7 @@ export function createUpdateWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -244,6 +252,7 @@ export function createMenuWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
     },
   });
 
@@ -314,6 +323,7 @@ export function createOverlayWindow(): BrowserWindow {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       backgroundThrottling: false,
     },
   });
@@ -328,8 +338,10 @@ export type RefreshResult =
   | { ok: true; accessToken: string }
   | { ok: false; reason: "no_refresh" | "unauthorized" | "network" };
 
-export async function refreshAccessToken(): Promise<RefreshResult> {
-  const refresh = store.get("refreshToken");
+let refreshInFlight: Promise<RefreshResult> | null = null;
+
+async function performAccessTokenRefresh(): Promise<RefreshResult> {
+  const refresh = getRefreshToken();
   const serverUrl = store.get("serverUrl");
   if (!refresh) return { ok: false, reason: "no_refresh" };
 
@@ -351,11 +363,20 @@ export async function refreshAccessToken(): Promise<RefreshResult> {
     const data = await res.json();
     if (!data?.access_token) return { ok: false, reason: "network" };
     store.set("accessToken", data.access_token);
-    if (data.refresh_token) setStoredValue("refreshToken", data.refresh_token);
+    if (data.refresh_token) setRefreshToken(data.refresh_token);
     return { ok: true, accessToken: data.access_token };
   } catch {
     return { ok: false, reason: "network" };
   }
+}
+
+export function refreshAccessToken(): Promise<RefreshResult> {
+  if (!refreshInFlight) {
+    refreshInFlight = performAccessTokenRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
 }
 
 export function getAccessToken(): string | null {

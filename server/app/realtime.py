@@ -1,9 +1,32 @@
 import asyncio
+import hashlib
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import settings
+
+try:
+    import redis
+except ImportError:  # local development without optional shared limiter
+    redis = None
+
+_redis = redis.Redis.from_url(settings.redis_url, decode_responses=True) if redis and settings.redis_url else None
+
+
+def _shared_limit(scope: str, identity: str, limit: int, window_seconds: int) -> bool | None:
+    if not _redis:
+        return None
+    digest = hashlib.sha256(identity.encode()).hexdigest()
+    key = f"screenping:limit:{scope}:{digest}"
+    try:
+        pipe = _redis.pipeline()
+        pipe.incr(key)
+        pipe.expire(key, window_seconds, nx=True)
+        count, _ = pipe.execute()
+        return int(count) <= limit
+    except Exception:
+        return None
 
 
 AFK_AFTER_SECONDS = 15 * 60
@@ -108,6 +131,9 @@ _upload_timestamps: dict[str, list[datetime]] = defaultdict(list)
 
 
 def check_rate_limit(user_id: str) -> bool:
+    shared = _shared_limit("send", user_id, settings.send_rate_limit, 60)
+    if shared is not None:
+        return shared
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(minutes=1)
     timestamps = [t for t in _send_timestamps[user_id] if t > window_start]
@@ -122,6 +148,11 @@ def check_reset_password_rate_limit(email: str) -> bool:
     key = email.strip().lower()
     if not key:
         return False
+    shared = _shared_limit(
+        "reset", key, settings.reset_password_attempt_limit, settings.reset_password_attempt_window_minutes * 60
+    )
+    if shared is not None:
+        return shared
     now = datetime.now(timezone.utc)
     window = timedelta(minutes=settings.reset_password_attempt_window_minutes)
     window_start = now - window
@@ -134,11 +165,19 @@ def check_reset_password_rate_limit(email: str) -> bool:
 
 
 def check_login_rate_limit(client_ip: str, username: str) -> bool:
+    ip_key = client_ip or "unknown"
+    user_key = username.strip().lower()
+    shared_ip = _shared_limit(
+        "login-ip", ip_key, settings.login_attempt_limit_per_ip, settings.login_attempt_window_minutes * 60
+    )
+    shared_user = _shared_limit(
+        "login-user", user_key, settings.login_attempt_limit_per_user, settings.login_attempt_window_minutes * 60
+    ) if user_key else True
+    if shared_ip is not None and shared_user is not None:
+        return shared_ip and shared_user
     now = datetime.now(timezone.utc)
     window = timedelta(minutes=settings.login_attempt_window_minutes)
     window_start = now - window
-    ip_key = client_ip or "unknown"
-    user_key = username.strip().lower()
 
     ip_attempts = [t for t in _login_attempts_ip[ip_key] if t > window_start]
     _login_attempts_ip[ip_key] = ip_attempts
@@ -157,6 +196,9 @@ def check_login_rate_limit(client_ip: str, username: str) -> bool:
 
 
 def check_upload_rate_limit(user_id: str) -> bool:
+    shared = _shared_limit("upload", user_id, settings.upload_rate_limit_per_minute, 60)
+    if shared is not None:
+        return shared
     now = datetime.now(timezone.utc)
     window_start = now - timedelta(minutes=1)
     timestamps = [t for t in _upload_timestamps[user_id] if t > window_start]

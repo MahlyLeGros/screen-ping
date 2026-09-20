@@ -100,6 +100,11 @@ $installerPath = Join-Path $releaseDir $installerName
 $latestYml = Join-Path $releaseDir "latest.yml"
 if (-not (Test-Path $installerPath)) { throw "Installer not found: $installerPath" }
 if (-not (Test-Path $latestYml)) { throw "latest.yml not found: $latestYml" }
+$signingKey = if ($env:SCREENPING_UPDATE_PRIVATE_KEY) { $env:SCREENPING_UPDATE_PRIVATE_KEY } else { Join-Path $DeployDir "update-signing-private.pem" }
+if (-not (Test-Path $signingKey)) { throw "Update signing key not found: $signingKey" }
+node (Join-Path $desktopDir "scripts\sign-update.js") $installerPath $signingKey
+if ($LASTEXITCODE -ne 0) { throw "Update signing failed" }
+$signaturePath = "$installerPath.sig"
 
 $installerUrlName = [Uri]::EscapeDataString($installerName)
 $downloadUrl = "https://screenping.xyz/desktop/updates/$installerUrlName"
@@ -173,6 +178,7 @@ try {
     }
 
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $installerPath -RemoteDir $staging
+    Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $signaturePath -RemoteDir $staging
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $latestYml -RemoteDir $staging
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $versionFeedYml -RemoteDir "$staging/v/$version"
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $latestJsonPath -RemoteDir "$($cfg.RemotePath)/server/app/desktop"
@@ -186,13 +192,14 @@ try {
     $moveCmd = @"
 sudo mkdir -p '$remoteUpdates/v/$version'
 sudo cp -f '$staging/$installerName' '$installerRemote'
+sudo cp -f '$staging/$installerName.sig' '$installerRemote.sig'
 sudo cp -f '$staging/latest.yml' '$remoteUpdates/latest.yml'
 sudo cp -f '$staging/v/$version/latest.yml' '$remoteUpdates/v/$version/latest.yml'
 sudo python3 '$staging/bootstrap-update-feeds.py' '$remoteUpdates' '$appDesktop/versions.json'
 sudo cp -f '$remoteUpdates/versions.json' '$appDesktop/versions.json' 2>/dev/null || true
 sudo chown -R www-data:www-data /var/www/screenping/desktop
 sudo chmod -R a+rX /var/www/screenping/desktop
-rm -rf '$staging/$installerName' '$staging/latest.yml' '$staging/v' '$staging/bootstrap-update-feeds.py'
+rm -rf '$staging/$installerName' '$staging/$installerName.sig' '$staging/latest.yml' '$staging/v' '$staging/bootstrap-update-feeds.py'
 "@
     $move = Invoke-SSHCommand -SessionId $session.SessionId -Command $moveCmd -TimeOut 600
     if ($move.ExitStatus -ne 0) {

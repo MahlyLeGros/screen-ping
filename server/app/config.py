@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     max_video_bytes: int = 50 * 1024 * 1024
     max_audio_bytes: int = 10 * 1024 * 1024
     max_avatar_bytes: int = 2 * 1024 * 1024
+    upload_chunk_bytes: int = 1024 * 1024
     avatar_max_px: int = 384
     avatar_webp_quality: int = 80
     max_batch_receivers: int = 20
@@ -40,6 +41,7 @@ class Settings(BaseSettings):
     desktop_link_expire_minutes: int = 5
     enable_api_docs: bool = False
     auth_cookie_secure: bool = False
+    redis_url: str = ""
 
     @property
     def cors_origin_list(self) -> list[str]:

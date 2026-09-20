@@ -72,6 +72,7 @@ const FETCH_CREDENTIALS: RequestCredentials = "include";
 let accessToken: string | null = null;
 let rememberSession = true;
 let bootstrapPromise: Promise<boolean> | null = null;
+let refreshPromise: Promise<string | null> | null = null;
 
 function clearLegacyTokenStorage() {
   localStorage.removeItem("access_token");
@@ -156,7 +157,7 @@ function decodeJwtExp(token: string): number | null {
   }
 }
 
-export async function refreshAccessToken(): Promise<string | null> {
+async function performRefresh(): Promise<string | null> {
   const res = await fetch(apiUrl("/api/auth/refresh"), {
     method: "POST",
     credentials: FETCH_CREDENTIALS,
@@ -171,6 +172,15 @@ export async function refreshAccessToken(): Promise<string | null> {
   const data: TokenResponse = await res.json();
   accessToken = data.access_token;
   return data.access_token;
+}
+
+export async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = performRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
 }
 
 /** Return a valid access token, refreshing if expired or about to expire. */
@@ -351,7 +361,7 @@ async function parseUploadError(res: Response): Promise<never> {
       if (typeof err.detail === "string") detail = err.detail;
     } catch {
       detail =
-        "Upload blocked by server (max ~25MB images, 50MB video). If this happens for small files, nginx needs client_max_body_size 60M — see deploy/nginx-screenping.conf";
+        "Upload blocked by server (max ~25MB images, 50MB video). If this happens for small files, nginx needs client_max_body_size 65M — see deploy/nginx-screenping.conf";
     }
     throw new Error(detail);
   }

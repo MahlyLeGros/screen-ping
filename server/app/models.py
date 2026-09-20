@@ -117,6 +117,19 @@ class DeviceSession(Base):
     user: Mapped["User"] = relationship("User", back_populates="device_sessions")
 
 
+class RefreshSession(Base):
+    __tablename__ = "refresh_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    secret_hash: Mapped[str] = mapped_column(String(64))
+    token_version: Mapped[int] = mapped_column(default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class DesktopLink(Base):
     __tablename__ = "desktop_links"
 

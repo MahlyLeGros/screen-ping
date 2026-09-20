@@ -7,6 +7,7 @@ import { persistLoginForUpdate } from "./auth";
 import { shutdownForUpdate } from "./shutdown";
 import { applySteppedUpdateFeed } from "./updateFeed";
 import { checkLatestVersion, getVersionCheckStatus } from "./versionCheck";
+import { verifyDownloadedUpdate } from "./updateSignature";
 
 export type UpdateStatus =
   | { state: "idle" }
@@ -178,8 +179,13 @@ export function initUpdater() {
       bytesPerSecond: progress.bytesPerSecond,
     });
   });
-  autoUpdater.on("update-downloaded", (info) => {
+  autoUpdater.on("update-downloaded", async (info) => {
     cancellation = null;
+    const installerPath = getDownloadedInstallerPath();
+    if (!installerPath || !(await verifyDownloadedUpdate(installerPath))) {
+      setStatus({ state: "error", message: "Update signature verification failed. The installer was not started." });
+      return;
+    }
     setStatus({ state: "ready", version: info.version });
 
     // The user is watching the progress window — let them press the button.

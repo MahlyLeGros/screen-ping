@@ -243,8 +243,8 @@ ls -lh data/uploads/avatars data/avatars-keep 2>/dev/null || true
 
     Remove-Item $tarPath -Force -ErrorAction SilentlyContinue
 
-    Write-Step "Restarting API server (loads code from server/app volume)..."
-    Invoke-Remote -SessionId $sshSessionId -Command "cd $($cfg.RemotePath) && docker compose build server && docker compose up -d --no-deps --force-recreate server" -TimeoutSec 600
+    Write-Step "Restarting the complete application stack (API, database and Redis)..."
+    Invoke-Remote -SessionId $sshSessionId -Command "cd $($cfg.RemotePath) && docker compose up -d --build --remove-orphans" -TimeoutSec 600
 
     Write-Step "Checking site and API..."
     Start-Sleep -Seconds 5

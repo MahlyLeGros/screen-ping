@@ -14,3 +14,15 @@ Scripts that talk to the production server (`screenping.xyz`).
 | `deploy.config.example.ps1` | Copy to `deploy.config.ps1` (gitignored) |
 
 Copy `deploy.config.example.ps1` → `deploy.config.ps1` and fill in host/credentials before deploying.
+
+## Update-signing key
+
+Desktop updates from 1.0.62 onward are authenticated with Ed25519. The private
+key is `deploy/update-signing-private.pem`; it is intentionally ignored by Git.
+Back it up in an encrypted password manager or on an offline encrypted drive
+before publishing 1.0.62. Losing it means installed clients cannot verify future
+updates. Never copy it to the VPS or commit it. The public key embedded in
+`desktop/main/updatePublicKey.ts` is safe to publish.
+
+Do not rotate this key after publishing without first shipping a client that
+trusts both the old and new public keys.

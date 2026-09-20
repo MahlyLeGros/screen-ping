@@ -1,6 +1,6 @@
 {
   "name": "screen-ping-desktop",
-  "version": "1.0.61",
+  "version": "1.0.62",
   "description": "Screen Ping desktop receiver",
   "author": "Screen Ping",
   "main": "dist/main/main.js",
@@ -74,8 +74,13 @@
   },
   "dependencies": {
     "electron-store": "^8.2.0",
-    "electron-updater": "^6.3.9",
-    "socket.io-client": "^4.8.1"
+    "electron-updater": "^6.8.9",
+    "socket.io-client": "^4.8.3"
+  },
+  "overrides": {
+    "socket.io-parser": "^4.2.7",
+    "fast-uri": "^3.1.6",
+    "js-yaml": "^4.3.2"
   },
   "devDependencies": {
     "@fontsource/dm-sans": "^5.3.0",

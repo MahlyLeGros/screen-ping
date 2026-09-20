@@ -1,7 +1,7 @@
-import { safeStorage, shell } from "electron";
+import { shell } from "electron";
 
 import { DEFAULT_SERVER_URL, normalizeServerUrl } from "./serverUrl";
-import store, { clearSavedCredentials, clearSessionTokens, setStoredValue } from "./store";
+import store, { clearSavedCredentials, clearSessionTokens, getRefreshToken, setRefreshToken } from "./store";
 import { refreshAccessToken, type RefreshResult } from "./windows";
 
 let browserLoginAbort: AbortController | null = null;
@@ -50,19 +50,29 @@ export function saveLoginCredentials(username: string, password: string, remembe
     return;
   }
 
+  // Never persist the account password. Long-lived login is provided by the
+  // refresh token, which is protected separately by the OS-backed store.
   store.set("savedUsername", username);
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(password);
-    store.set("savedPasswordEnc", Buffer.from(encrypted).toString("base64"));
-    return;
-  }
-
-  store.set("savedPasswordEnc", Buffer.from(password, "utf8").toString("base64"));
+  store.delete("savedPasswordEnc");
 }
 
 export function clearLoginCredentials() {
   clearSavedCredentials();
   store.set("rememberLogin", false);
+}
+
+export async function revokeCurrentSession() {
+  const refresh = getRefreshToken();
+  if (!refresh) return;
+  try {
+    await fetch(`${apiBase()}/api/auth/logout`, {
+      method: "POST",
+      headers: DESKTOP_CLIENT_HEADERS,
+      body: JSON.stringify({ refresh_token: refresh }),
+    });
+  } catch {
+    // Local logout must still succeed while offline.
+  }
 }
 
 export function getSavedLoginForm() {
@@ -72,17 +82,7 @@ export function getSavedLoginForm() {
     return { username: "", password: "", remember: true };
   }
 
-  const enc = store.get("savedPasswordEnc");
-  if (!enc) {
-    return { username, password: "", remember: true };
-  }
-
-  try {
-    const password = decryptSavedPassword(enc);
-    return { username, password, remember: true };
-  } catch {
-    return { username, password: "", remember: true };
-  }
+  return { username, password: "", remember: true };
 }
 
 const RESTORE_RETRY_DELAYS_MS = [400, 800, 1500, 2500, 4000, 6000, 8000];
@@ -102,30 +102,8 @@ async function refreshAccessTokenWithRetry(): Promise<RefreshResult> {
   return last;
 }
 
-function decryptSavedPassword(enc: string): string {
-  return safeStorage.isEncryptionAvailable()
-    ? safeStorage.decryptString(Buffer.from(enc, "base64"))
-    : Buffer.from(enc, "base64").toString("utf8");
-}
-
-async function loginWithSavedCredentials(): Promise<boolean> {
-  if (store.get("rememberLogin") === false) return false;
-  const username = store.get("savedUsername");
-  const enc = store.get("savedPasswordEnc");
-  if (!username || !enc) return false;
-
-  try {
-    const password = decryptSavedPassword(enc);
-    if (!password) return false;
-    await loginWithCredentials(username, password);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function tryRestoreSession(): Promise<boolean> {
-  if (store.get("accessToken") || store.get("refreshToken")) {
+  if (store.get("accessToken") || getRefreshToken()) {
     const refreshed = await refreshAccessTokenWithRetry();
     if (refreshed.ok) return true;
     if (refreshed.reason === "network" && store.get("accessToken")) {
@@ -133,7 +111,7 @@ export async function tryRestoreSession(): Promise<boolean> {
     }
   }
 
-  return loginWithSavedCredentials();
+  return false;
 }
 
 export async function loginAndRemember(username: string, password: string, remember: boolean) {
@@ -144,7 +122,7 @@ export async function loginAndRemember(username: string, password: string, remem
 export function applySessionTokens(access: string, refresh?: string | null, remember = true) {
   if (!access) throw new Error("Login failed");
   store.set("accessToken", access);
-  if (refresh) setStoredValue("refreshToken", refresh);
+  if (refresh) setRefreshToken(refresh);
   store.set("rememberLogin", remember);
   if (!remember) clearSavedCredentials();
 }
@@ -238,7 +216,4 @@ export async function loginViaBrowser(mode: "google" | "web", remember: boolean)
 
 export function persistLoginForUpdate() {
   store.set("online", true);
-  if (store.get("savedUsername") && store.get("savedPasswordEnc")) {
-    store.set("rememberLogin", true);
-  }
 }
