@@ -11,6 +11,7 @@ This repository is the open-source code for [screenping.xyz](https://screenping.
 | Folder | What it is |
 |--------|------------|
 | **`desktop/`** | Electron receiver app (overlay + tray) |
+| **`screen-clip/`** | Electron instant-replay clipper (screen + audio buffer) |
 | **`server/`** | FastAPI + Socket.IO backend |
 | **`web/`** | React dashboard (send pings, friends) |
 | **`shared/`** | Code shared by web + desktop caption UI |
@@ -29,6 +30,8 @@ This repository is the open-source code for [screenping.xyz](https://screenping.
 | **`start-all.bat`** | Rebuild web+desktop, then server+ngrok+app |
 | **`setup-server.bat`** | First-time Python venv for the API |
 | **`build-installer.bat`** | Build `desktop/release/Screen Ping Setup *.exe` |
+| **`start-clip.bat`** | Install/build/run Screen Clip |
+| **`build-clip-installer.bat`** | Build `screen-clip/release/Screen Clip Setup *.exe` |
 
 Requires [ngrok](https://ngrok.com) on PATH for the online scripts.
 

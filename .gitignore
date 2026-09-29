@@ -18,3 +18,7 @@ deploy/update-signing-private.rar
 deploy/deploy.config.ps1
 desktop/USE_LOCAL_SERVER
 *.zip
+screen-clip/vendor/ffmpeg/ffmpeg
+screen-clip/vendor/ffmpeg/ffmpeg.exe
+screen-clip/vendor/ffmpeg/*.zip
+screen-clip/release/
