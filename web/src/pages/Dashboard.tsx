@@ -16,7 +16,7 @@ import {
   disconnectSocket,
   reconnectSocket,
   requestDesktopUpdate,
-  sendMessage,
+  sendMessageBatch,
   subscribeFriends,
   subscribeSocketConnection,
   waitForSocket,
@@ -782,21 +782,17 @@ export default function DashboardPage() {
       }
 
       setStatus("Sending...");
-      for (const upload of uploads) {
-        sendMessage(
-          upload.receiver_id,
-          upload.message_id,
-          duration,
-          sendLayout,
-          delayMs,
-          fadeInMs,
-          fadeOutMs,
-          hasSound ? sendAudioDelay : 0,
-          sendOverlayCaption ? captionLayout : undefined,
-        );
-      }
-      const count = uploads.length;
-      setStatus(`Sent to ${count} friend${count === 1 ? "" : "s"} — you can send again`);
+      const result = await sendMessageBatch(
+        uploads.map(upload => ({ receiverId: upload.receiver_id, messageId: upload.message_id })),
+        { durationMs: duration, layout: sendLayout, delayMs, fadeInMs, fadeOutMs,
+          audioDelayMs: hasSound ? sendAudioDelay : 0,
+          captionLayout: sendOverlayCaption ? captionLayout : undefined },
+      );
+      const count = result.accepted;
+      const detail = count < uploads.length ? " — some recipients were not accepted; check recent sends"
+        : count > 1 && !result.synchronized ? " — update all desktop apps for synchronized playback"
+        : " — preparing playback";
+      setStatus(`Accepted for ${count} friend${count === 1 ? "" : "s"}${detail}`);
       setCaption("");
       setOverlayCaption("");
       setCaptionLayout(DEFAULT_CAPTION_LAYOUT);

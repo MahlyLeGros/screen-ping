@@ -1,4 +1,7 @@
 import asyncio
+import time
+import uuid
+from datetime import timedelta
 
 import socketio
 from fastapi import HTTPException
@@ -19,6 +22,7 @@ from app.services.pending import (
 from app.config import settings
 from app.services.ping_limits import sanitize_delivery_options
 from app.services.media_access import release_media_for_message, sign_media_url
+from app.services.delivery_sync import DeliveryGroup
 from app.services.draw import (
     DRAW_MIN_INTERVAL_MS,
     discard_pending_stroke,
@@ -38,6 +42,108 @@ from app.services.draw import (
 )
 
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.cors_origin_list)
+_delivery_groups: dict[str, DeliveryGroup] = {}
+_delivery_group_tasks: dict[str, asyncio.Task] = {}
+_batch_lock = asyncio.Lock()
+
+
+async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None:
+    group = _delivery_groups.get(group_id)
+    if not group or not group.sealed or (not timeout and not group.complete()):
+        return
+    # Pop before the first await, so duplicate readiness/timeout cannot start twice.
+    _delivery_groups.pop(group_id, None)
+    task = _delivery_group_tasks.pop(group_id, None)
+    if task and task is not asyncio.current_task():
+        task.cancel()
+    start_at = int(time.time() * 1000) + 1500 + group.delay_ms
+    db = SessionLocal()
+    try:
+        for message_id, sids in group.targets.items():
+            message = db.get(MediaMessage, message_id)
+            if not message or message.delivery_status != DeliveryStatus.pending:
+                continue
+            ready_sids = [sid for sid in sids if (message_id, sid) in group.ready]
+            if not ready_sids:
+                mark_message_failed(db, message)
+                await _revoke_on_receiver(message)
+                await _notify_sender_result(message, reason="preparation_timeout")
+                continue
+            # Start expiry at the scheduled display, not before a deliberate delay.
+            message.dispatched_at = utcnow() + timedelta(milliseconds=1500 + group.delay_ms)
+            db.commit()
+            for dsid in ready_sids:
+                await sio.emit("message:start", {"messageId": message_id, "startAt": start_at}, to=dsid)
+            for dsid in sids - set(ready_sids):
+                await sio.emit("message:revoke", {"messageId": message_id}, to=dsid)
+    finally:
+        db.close()
+
+
+async def _expire_delivery_group(group_id: str) -> None:
+    await asyncio.sleep(30)
+    await _start_delivery_group(group_id, timeout=True)
+
+
+async def _remove_delivery_group_message(message_id: str) -> None:
+    for group_id, group in list(_delivery_groups.items()):
+        if message_id in group.targets:
+            group.remove(message_id)
+            await _start_delivery_group(group_id)
+
+
+@sio.on("clock:sync")
+async def clock_sync(sid, _data):
+    await sio.get_session(sid)
+    return {"serverNow": int(time.time() * 1000)}
+
+
+@sio.on("message:ready")
+async def message_ready(sid, data):
+    if not isinstance(data, dict):
+        return
+    group_id, message_id = data.get("groupId"), data.get("messageId")
+    if not isinstance(group_id, str) or not isinstance(message_id, str):
+        return
+    group = _delivery_groups.get(group_id)
+    if group and group.mark_ready(message_id, sid):
+        await _start_delivery_group(group_id)
+
+
+@sio.on("message:send-batch")
+async def message_send_batch(sid, data):
+    if not isinstance(data, dict) or not isinstance(data.get("messages"), list):
+        return {"ok": False, "reason": "invalid_payload"}
+    items = data["messages"]
+    if not 1 <= len(items) <= settings.max_batch_receivers or any(
+        not isinstance(item, dict) or not isinstance(item.get("messageId"), str)
+        or not isinstance(item.get("receiverId"), str) for item in items
+    ) or len({item["messageId"] for item in items}) != len(items) or len({item["receiverId"] for item in items}) != len(items):
+        return {"ok": False, "reason": "invalid_payload"}
+    session = await sio.get_session(sid)
+    if not session.get("user_id"):
+        return {"ok": False, "reason": "unauthorized"}
+    async with _batch_lock:
+        # Serial dispatch preserves the same batch order across recipients.
+        socket_ids = {dsid for item in items for dsid in presence_manager.desktop_sids_for_user(item["receiverId"])}
+        supports_sync = bool(socket_ids)
+        for dsid in socket_ids:
+            desktop_session = await sio.get_session(dsid)
+            supports_sync = supports_sync and desktop_session.get("delivery_sync") == 1
+        group_id = str(uuid.uuid4()) if supports_sync and len(_delivery_groups) < 200 else None
+        if group_id:
+            _delivery_groups[group_id] = DeliveryGroup(delay_ms=sanitize_delivery_options(data)["delayMs"])
+        results = []
+        try:
+            for item in items:
+                result = await _dispatch_message(sid, {**data, **item}, _group_id=group_id)
+                results.append({"messageId": item["messageId"], **(result or {"ok": False})})
+        finally:
+            if group_id and group_id in _delivery_groups:
+                _delivery_groups[group_id].sealed = True
+                _delivery_group_tasks[group_id] = asyncio.create_task(_expire_delivery_group(group_id))
+                await _start_delivery_group(group_id)
+        return {"ok": all(result["ok"] for result in results), "results": results, "synchronized": bool(group_id)}
 
 
 async def _emit_draw_to_receivers(receiver_ids: list[str], event: str, payload: dict) -> list[str]:
@@ -95,7 +201,8 @@ async def connect(sid, environ, auth):
             )
     finally:
         db.close()
-    await sio.save_session(sid, {"user_id": user_id, "client_type": client_type})
+    await sio.save_session(sid, {"user_id": user_id, "client_type": client_type,
+                                 "delivery_sync": (auth or {}).get("delivery_sync") if client_type == "desktop" else None})
     return True
 
 
@@ -208,6 +315,12 @@ async def desktop_update_request(sid, _data):
 
 @sio.on("message:send")
 async def message_send(sid, data):
+    return await _dispatch_message(sid, data)
+
+
+async def _dispatch_message(sid, data, _group_id=None):
+    if not isinstance(data, dict):
+        return {"ok": False, "reason": "invalid_payload"}
     session = await sio.get_session(sid)
     sender_id = session.get("user_id")
     receiver_id = data.get("receiverId")
@@ -238,6 +351,9 @@ async def message_send(sid, data):
         if message.delivery_status in (DeliveryStatus.delivered, DeliveryStatus.failed):
             await sio.emit("message:result", {"messageId": message_id, "status": "failed", "reason": "already_sent"}, to=sid)
             return
+
+        if message.delivery_status == DeliveryStatus.pending and message.dispatched_at is not None:
+            return {"ok": True, "alreadyPending": True}
 
         desktop_sids = presence_manager.desktop_sids_for_user(receiver_id)
         if not desktop_sids:
@@ -272,11 +388,16 @@ async def message_send(sid, data):
             "layout": options["layout"],
             "captionLayout": options["captionLayout"],
         }
+        message.delivery_status = DeliveryStatus.pending
+        message.dispatched_at = utcnow() + timedelta(milliseconds=0 if _group_id else options["delayMs"])
+        db.commit()
+        # An immediate desktop ack must not be overwritten after emit yields.
+        if _group_id:
+            payload["syncGroupId"] = _group_id
+            _delivery_groups[_group_id].add(message_id, desktop_sids)
         for dsid in desktop_sids:
             await sio.emit("message:deliver", payload, to=dsid)
-        message.delivery_status = DeliveryStatus.pending
-        message.dispatched_at = utcnow()
-        db.commit()
+        return {"ok": True}
     finally:
         db.close()
 
@@ -333,6 +454,7 @@ async def message_cancel(sid, data):
             return
         await _revoke_on_receiver(message)
         await _notify_sender_result(message, reason="cancelled")
+        await _remove_delivery_group_message(message.id)
     finally:
         db.close()
 
@@ -364,6 +486,7 @@ async def message_ack(sid, data):
             release_media_for_message(db, message)
 
         await _notify_sender_result(message)
+        await _remove_delivery_group_message(message.id)
     finally:
         db.close()
 

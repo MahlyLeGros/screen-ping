@@ -15,6 +15,7 @@ export interface ElectronAPI {
   dismissOverlay: (messageId: string) => void;
   onShowOverlay: (callback: (payload: OverlayPayload) => void) => void;
   onHideOverlay: (callback: () => void) => void;
+  onStartOverlay: (callback: (data: { messageId: string }) => void) => void;
   notifyOverlayReady: (messageId: string) => void;
   notifyOverlayInitialized: () => void;
   notifyOverlayFailed: (messageId: string) => void;
@@ -40,6 +41,7 @@ export interface OverlayPayload {
   fadeOutMs?: number;
   layout?: MediaLayout;
   captionLayout?: CaptionLayout;
+  syncGroupId?: string;
 }
 
 declare global {

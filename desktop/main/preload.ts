@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onHideOverlay: (callback: () => void) => {
     ipcRenderer.on("overlay:hide", () => callback());
   },
+  onStartOverlay: (callback: (data: { messageId: string }) => void) => {
+    ipcRenderer.on("overlay:start", (_event, data) => callback(data));
+  },
   notifyOverlayReady: (messageId: string) => {
     ipcRenderer.send("overlay:ready", { messageId });
   },

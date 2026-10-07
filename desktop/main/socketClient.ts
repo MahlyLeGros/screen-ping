@@ -51,6 +51,11 @@ let onPresence: PresenceHandler | null = null;
 let onFriendsUpdate: FriendsUpdateHandler | null = null;
 
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let serverClockOffset = 0;
+
+export function preparedMessage(messageId: string, groupId: string) {
+  socket?.emit("message:ready", { messageId, groupId });
+}
 
 const HEARTBEAT_MS = 30_000;
 
@@ -94,7 +99,7 @@ async function applyFreshAuth(): Promise<boolean> {
     return false;
   }
   if (socket) {
-    socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion() };
+    socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 };
   }
   return true;
 }
@@ -103,6 +108,7 @@ export function connectSocket(
   onDeliver: DeliverHandler,
   onStatus?: (connected: boolean) => void,
   onRevoke?: RevokeHandler,
+  onStart?: (messageId: string, startAtLocal: number) => void,
 ) {
   disconnectSocket();
 
@@ -112,8 +118,9 @@ export function connectSocket(
   if (!token) return;
 
   socket = io(serverUrl, {
-    auth: { token, client_type: "desktop", app_version: app.getVersion() },
+    auth: { token, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 },
     transports: ["websocket", "polling"],
+    tryAllTransports: true,
     reconnection: true,
     reconnectionDelay: 1000,
     reconnectionDelayMax: 10000,
@@ -121,6 +128,20 @@ export function connectSocket(
   });
 
   socket.on("connect", () => {
+    const connection = socket;
+    let bestRoundTrip = Infinity;
+    for (let i = 0; i < 3; i++) {
+      const sentAt = Date.now();
+      connection?.timeout(5000).emit("clock:sync", {}, (error: Error | null, data: { serverNow: number }) => {
+        const receivedAt = Date.now();
+        if (socket !== connection || error || !Number.isFinite(data?.serverNow)) return;
+        const roundTrip = receivedAt - sentAt;
+        if (roundTrip < bestRoundTrip) {
+          bestRoundTrip = roundTrip;
+          serverClockOffset = data.serverNow - (sentAt + receivedAt) / 2;
+        }
+      });
+    }
     onStatus?.(true);
     startPresenceHeartbeat();
     void import("./versionCheck").then(({ checkLatestVersion }) => checkLatestVersion());
@@ -143,7 +164,7 @@ export function connectSocket(
 
     const result = await refreshAccessToken();
     if (result.ok && socket) {
-      socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion() };
+      socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 };
       if (!socket.connected) socket.connect();
       return;
     }
@@ -159,6 +180,9 @@ export function connectSocket(
 
   socket.on("message:revoke", (payload: { messageId?: string }) => {
     if (payload?.messageId) onRevoke?.(payload.messageId);
+  });
+  socket.on("message:start", (payload: { messageId: string; startAt: number }) => {
+    if (Number.isFinite(payload?.startAt)) onStart?.(payload.messageId, payload.startAt - serverClockOffset);
   });
 
   socket.on("draw:begin", (payload: DrawBeginPayload) => {

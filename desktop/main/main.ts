@@ -16,7 +16,7 @@ import store, { applyLaunchAtLoginDefault, clearSessionTokens } from "./store";
 import { OverlayQueue } from "./overlayQueue";
 import { drawOverlay } from "./drawOverlay";
 import { clearLoginCredentials, cancelBrowserLogin, getSavedLoginForm, loginAndRemember, loginViaBrowser, revokeCurrentSession, tryRestoreSession } from "./auth";
-import { ackMessage, connectSocket, disconnectSocket, isConnected, sendMessage, setFriendsUpdateHandler, setPresenceHandler, setSessionExpiredHandler } from "./socketClient";
+import { ackMessage, preparedMessage, connectSocket, disconnectSocket, isConnected, sendMessage, setFriendsUpdateHandler, setPresenceHandler, setSessionExpiredHandler } from "./socketClient";
 import {
   acceptFriend,
   blockFriend,
@@ -81,7 +81,7 @@ let watchdogStarted = false;
 
 const overlayQueue = new OverlayQueue((messageId, status) => {
   ackMessage(messageId, status);
-});
+}, preparedMessage);
 
 function setupAutoLaunch() {
   if (!app.isPackaged || process.platform !== "win32") return;
@@ -260,6 +260,7 @@ function reconnectSocket() {
       refreshTray();
     },
     (messageId) => overlayQueue.revoke(messageId),
+    (messageId, startAtLocal) => overlayQueue.scheduleStart(messageId, startAtLocal),
   );
 }
 

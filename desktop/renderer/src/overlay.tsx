@@ -24,6 +24,7 @@ import { captionFrameStyle, flipStyle, frameStyle, mediaObjectFit } from "./type
 interface DisplaySession {
   payload: OverlayPayload;
   ready: boolean;
+  started?: boolean;
 }
 
 interface DrawSessionLayer {
@@ -49,8 +50,6 @@ function stopAllMedia(root: ParentNode | Document = document) {
 }
 
 function preloadMedia(payload: OverlayPayload): Promise<boolean> {
-  if (payload.mediaType === "audio") return Promise.resolve(true);
-
   return new Promise<boolean>((resolve) => {
     let settled = false;
     const timer = setTimeout(() => done(false), PRELOAD_MEDIA_TIMEOUT_MS);
@@ -68,7 +67,7 @@ function preloadMedia(payload: OverlayPayload): Promise<boolean> {
       return;
     }
 
-    const video = document.createElement("video");
+    const video = document.createElement(payload.mediaType === "audio" ? "audio" : "video");
     video.preload = "auto";
     video.muted = true; // unlock faster metadata load; display element is unmuted
     video.onloadeddata = () => done(true);
@@ -187,16 +186,19 @@ function OverlayApp() {
 
     window.electronAPI.onShowOverlay((data) => {
       const payload = data as OverlayPayload;
-      if (payload.mediaType === "audio") return;
       setSession({ payload, ready: false });
+    });
+
+    window.electronAPI.onStartOverlay(({ messageId }) => {
+      setSession((current) => current?.payload.messageId === messageId
+        ? { ...current, started: true } : current);
     });
 
     window.electronAPI.onHideOverlay(() => {
       stopAllMedia();
       setSession(null);
-      requestAnimationFrame(() => {
-        window.electronAPI.notifyOverlayCleared();
-      });
+      // A hidden window may not run an animation frame. Clearing is not a paint barrier.
+      window.electronAPI.notifyOverlayCleared();
     });
 
     window.electronAPI.onDrawBegin((raw) => {
@@ -309,7 +311,10 @@ function OverlayApp() {
     let cancelled = false;
 
     void (async () => {
-      const loaded = await preloadMedia(payload);
+      const loaded = (await Promise.all([
+        preloadMedia(payload),
+        ...(payload.audioUrl ? [preloadMedia({ ...payload, mediaType: "audio", mediaUrl: payload.audioUrl, audioUrl: undefined })] : []),
+      ])).every(Boolean);
       if (cancelled || sessionRef.current?.payload.messageId !== messageId) return;
       if (!loaded) {
         setSession(null);
@@ -326,7 +331,7 @@ function OverlayApp() {
   }, [session]);
 
   useEffect(() => {
-    if (!session?.ready) return;
+    if (!session?.ready || !session.started) return;
     const { payload } = session;
     const delay = Math.max(0, payload.audioDelayMs ?? 0);
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -344,7 +349,7 @@ function OverlayApp() {
       });
     };
 
-    if (payload.audioUrl) {
+    if (payload.audioUrl || payload.mediaType === "audio") {
       schedulePlay(() => overlayAudioRef.current);
     }
 
@@ -371,7 +376,7 @@ function OverlayApp() {
   const payload = session?.ready ? session.payload : null;
   const layout = payload?.layout ?? DEFAULT_LAYOUT;
   const fitStyle = payload ? mediaObjectFit(layout) : null;
-  const audioFullUrl = payload?.audioUrl ?? null;
+  const audioFullUrl = payload?.audioUrl ?? (payload?.mediaType === "audio" ? payload.mediaUrl : null);
   const captionLayout = payload ? payload.captionLayout ?? captionLayoutBelowMedia(layout) : null;
   const captionFontSize = captionLayout?.fontSizePct ?? 10;
 
@@ -404,7 +409,7 @@ function OverlayApp() {
           {mediaReady && payload?.mediaType === "video" && (
             <div key={payload.messageId} className="media-frame" style={frameStyle(layout)}>
               <div style={flipStyle(layout)}>
-                <video src={payload.mediaUrl} style={fitStyle!} autoPlay muted={false} playsInline
+                <video src={payload.mediaUrl} style={fitStyle!} muted={false} playsInline
                   onError={() => window.electronAPI.notifyOverlayFailed(payload.messageId)} />
               </div>
             </div>

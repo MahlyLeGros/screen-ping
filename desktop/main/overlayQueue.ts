@@ -32,6 +32,7 @@ export interface DeliverPayload {
     rotation?: number;
     fontSizePct?: number;
   };
+  syncGroupId?: string;
 }
 
 type AckCallback = (messageId: string, status: "delivered" | "failed" | "paused") => void;
@@ -50,6 +51,14 @@ function readMs(value: unknown, fallback: number): number {
 const AUDIO_URL_PATTERN = /\.(mp3|wav|ogg|m4a|aac|flac)(\?|$)/i;
 const OVERLAY_READY_TIMEOUT_MS = 15_000;
 
+async function bounded(work: Promise<unknown>, ms = 800): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([work, new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); })]);
+  } catch { /* A closing renderer must never block the delivery queue. */ }
+  finally { if (timer) clearTimeout(timer); }
+}
+
 function isAudioOnlyPayload(payload: DeliverPayload): boolean {
   // Trust declared type first — URL extension heuristics must never override video/image.
   if (payload.mediaType === "video" || payload.mediaType === "image") return false;
@@ -59,6 +68,7 @@ function isAudioOnlyPayload(payload: DeliverPayload): boolean {
 }
 
 function animateWindowOpacity(win: BrowserWindow, from: number, to: number, durationMs: number): Promise<void> {
+  if (win.isDestroyed()) return Promise.resolve();
   if (durationMs <= 0) {
     win.setOpacity(to);
     return Promise.resolve();
@@ -67,6 +77,7 @@ function animateWindowOpacity(win: BrowserWindow, from: number, to: number, dura
   return new Promise((resolve) => {
     const start = Date.now();
     const step = () => {
+      if (win.isDestroyed()) { resolve(); return; }
       const elapsed = Date.now() - start;
       const t = Math.min(1, elapsed / durationMs);
       win.setOpacity(from + (to - from) * t);
@@ -101,6 +112,7 @@ export class OverlayQueue {
   private readyTimeout: ReturnType<typeof setTimeout> | null = null;
   private overlayFullyVisible = false;
   private visibilityGuardsAttached = false;
+  private prepared = false;
 
   private readonly onOverlayHidden = () => {
     if (!this.showing || this.recoverTimer) return;
@@ -135,15 +147,15 @@ export class OverlayQueue {
     this.visibilityGuardsAttached = false;
   }
 
-  constructor(onAck: AckCallback) {
+  constructor(onAck: AckCallback, private onPrepared?: (messageId: string, groupId: string) => void) {
     this.onAck = onAck;
     ipcMain.on("overlay:dismiss", (_event, data: { messageId: string }) => {
       if (data.messageId === this.currentMessageId) {
         void this.finish("delivered");
       }
     });
-    ipcMain.on("overlay:ready", (_event, data: { messageId: string }) => {
-      void this.onOverlayReady(data.messageId);
+    ipcMain.on("overlay:ready", (event, data: { messageId: string }) => {
+      if (event.sender === this.overlayWindow?.webContents) void this.onOverlayReady(data.messageId);
     });
     ipcMain.on("overlay:failed", (event, data: { messageId: string }) => {
       if (event.sender === this.overlayWindow?.webContents && data.messageId === this.currentMessageId) {
@@ -166,6 +178,7 @@ export class OverlayQueue {
       this.onAck(payload.messageId, "paused");
       return;
     }
+    if (this.currentMessageId === payload.messageId || this.queue.some((item) => item.messageId === payload.messageId)) return;
     this.queue.push(payload);
     void this.processNext();
   }
@@ -191,15 +204,21 @@ export class OverlayQueue {
     this.showing = true;
     drawOverlay.setPingShowing(true);
     this.currentMessageId = payload.messageId;
+    this.prepared = false;
 
-    const delayMs = Math.max(0, payload.delayMs ?? 0);
+    const delayMs = payload.syncGroupId ? 0 : Math.max(0, payload.delayMs ?? 0);
     const start = async () => {
-      if (isAudioOnlyPayload(payload)) {
-        await this.playAudioOnly(payload);
-        await this.finish("delivered");
-        return;
+      if (this.currentMessageId !== payload.messageId || this.finishing) return;
+      try {
+        if (isAudioOnlyPayload(payload) && !payload.syncGroupId) {
+          await this.playAudioOnly(payload);
+          if (this.currentMessageId === payload.messageId) await this.finish("delivered");
+          return;
+        }
+        await this.displayPayload(payload);
+      } catch {
+        if (this.currentMessageId === payload.messageId) await this.finish("failed");
       }
-      await this.displayPayload(payload);
     };
 
     if (delayMs > 0) {
@@ -269,25 +288,25 @@ export class OverlayQueue {
 
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     await new Promise((resolve) => setTimeout(resolve, audioDelayMs + this.currentDurationMs));
-    await this.stopHiddenAudio();
+    if (this.currentMessageId === payload.messageId) await this.stopHiddenAudio();
   }
 
   private async stopHiddenAudio() {
     const win = this.audioWindow;
     if (!win || win.isDestroyed()) return;
     try {
-      await win.webContents.executeJavaScript(`
+      await bounded(win.webContents.executeJavaScript(`
         document.querySelectorAll("audio,video").forEach((el) => {
           el.pause();
           el.removeAttribute("src");
           el.load();
         });
-      `);
+      `));
     } catch {
       /* window may already be gone */
     }
     try {
-      await win.loadURL("about:blank");
+      await bounded(win.loadURL("about:blank"));
     } catch {
       /* ignore */
     }
@@ -297,12 +316,12 @@ export class OverlayQueue {
     const win = this.overlayWindow;
     if (!win || win.isDestroyed()) return;
     try {
-      await win.webContents.executeJavaScript(`
+      await bounded(win.webContents.executeJavaScript(`
         document.querySelectorAll("audio,video").forEach((el) => {
           el.pause();
           el.currentTime = 0;
         });
-      `);
+      `));
     } catch {
       /* overlay may already be gone */
     }
@@ -335,11 +354,16 @@ export class OverlayQueue {
     if (!this.overlayWindow) return Promise.resolve();
 
     return new Promise((resolve) => {
-      const timeout = setTimeout(resolve, 500);
-      ipcMain.once("overlay:cleared", () => {
+      const done = () => {
         clearTimeout(timeout);
+        ipcMain.removeListener("overlay:cleared", onCleared);
         resolve();
-      });
+      };
+      const onCleared = (event: Electron.IpcMainEvent) => {
+        if (event.sender === this.overlayWindow?.webContents) done();
+      };
+      const timeout = setTimeout(done, 500);
+      ipcMain.on("overlay:cleared", onCleared);
       this.overlayWindow!.webContents.send("overlay:hide");
     });
   }
@@ -358,15 +382,36 @@ export class OverlayQueue {
       if (this.currentMessageId === messageId && this.showing) {
         void this.finish("failed");
       }
-    }, OVERLAY_READY_TIMEOUT_MS);
+    }, this.currentPayload?.syncGroupId ? 45_000 : OVERLAY_READY_TIMEOUT_MS);
   }
 
   private async onOverlayReady(messageId: string) {
-    if (messageId !== this.currentMessageId || !this.overlayWindow) return;
+    if (messageId !== this.currentMessageId || !this.overlayWindow || this.finishing || this.prepared) return;
+
+    this.prepared = true;
+    if (this.currentPayload?.syncGroupId && this.onPrepared) {
+      this.onPrepared(messageId, this.currentPayload.syncGroupId);
+      return;
+    }
+    await this.startPrepared(messageId);
+  }
+
+  scheduleStart(messageId: string, startAtLocal: number) {
+    if (messageId !== this.currentMessageId || !this.prepared || this.finishing || this.showTimer) return;
+    this.clearReadyTimeout();
+    this.showTimer = setTimeout(() => {
+      this.showTimer = null;
+      void this.startPrepared(messageId);
+    }, Math.max(0, startAtLocal - Date.now()));
+  }
+
+  private async startPrepared(messageId: string) {
+    if (messageId !== this.currentMessageId || !this.overlayWindow || this.finishing) return;
 
     this.clearReadyTimeout();
 
     showOverlayWindow(this.overlayWindow);
+    this.overlayWindow.webContents.send("overlay:start", { messageId });
     await animateWindowOpacity(this.overlayWindow, 0, 1, this.currentFadeInMs);
     if (this.currentMessageId !== messageId || this.finishing || !this.showing) return;
     this.overlayFullyVisible = true;
@@ -383,6 +428,10 @@ export class OverlayQueue {
 
     this.overlayWindow.setOpacity(0);
     await this.clearRenderer();
+    if (this.currentMessageId !== payload.messageId || this.finishing || this.overlayWindow.isDestroyed()) return;
+    // Wake Chromium while still transparent: hidden/off-screen windows can defer
+    // React rendering until another event, especially after a long idle period.
+    showOverlayWindow(this.overlayWindow);
 
     const serverUrl = store.get("serverUrl");
     const fullUrl = cacheBust(
@@ -416,8 +465,6 @@ export class OverlayQueue {
     this.finishing = true;
     this.stopTopMostKeeper();
     this.clearReadyTimeout();
-    await this.stopOverlayMedia();
-    await this.stopHiddenAudio();
     if (this.showTimer) {
       clearTimeout(this.showTimer);
       this.showTimer = null;
@@ -426,12 +473,13 @@ export class OverlayQueue {
       clearTimeout(this.dismissTimer);
       this.dismissTimer = null;
     }
+    await Promise.all([this.stopOverlayMedia(), this.stopHiddenAudio()]);
     if (this.currentMessageId) {
       this.onAck(this.currentMessageId, status);
       this.currentMessageId = null;
     }
 
-    if (this.overlayWindow && !this.wasAudioOnly) {
+    if (this.overlayWindow && !this.overlayWindow.isDestroyed() && !this.wasAudioOnly) {
       const opacity = this.overlayWindow.getOpacity();
       // Keep window opaque if live draw is holding it; only clear media.
       if (drawOverlay.isActive()) {
@@ -445,6 +493,7 @@ export class OverlayQueue {
     this.currentFadeInMs = 200;
     this.currentFadeOutMs = 0;
     this.currentPayload = null;
+    this.prepared = false;
     this.wasAudioOnly = false;
     this.showing = false;
     drawOverlay.setPingShowing(false);

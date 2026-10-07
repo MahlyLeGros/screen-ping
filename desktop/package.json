@@ -1,6 +1,6 @@
 {
   "name": "screen-ping-desktop",
-  "version": "1.0.64",
+  "version": "1.0.65",
   "description": "Screen Ping desktop receiver",
   "author": "Screen Ping",
   "main": "dist/main/main.js",
@@ -8,6 +8,7 @@
     "build:main": "tsc -p tsconfig.main.json",
     "build:renderer": "vite build",
     "build": "npm run build:main && npm run build:renderer",
+    "test:delivery": "npm run build && electron scripts/test-delivery.cjs",
     "dev": "npm run build:main && concurrently \"npm run watch:main\" \"vite\" \"wait-on http://localhost:5174 && electron . --vite\"",
     "watch:main": "tsc -p tsconfig.main.json -w",
     "start": "electron .",

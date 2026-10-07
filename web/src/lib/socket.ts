@@ -78,6 +78,7 @@ async function createSocket() {
   socket = io(window.location.origin, {
     auth: { token, client_type: "web" },
     transports: ["websocket", "polling"],
+    tryAllTransports: true,
     reconnection: true,
   });
 
@@ -109,6 +110,7 @@ export function connectSocket(
 }
 
 export async function reconnectSocket() {
+  if (socket?.connected) return socket;
   return createSocket();
 }
 
@@ -149,6 +151,25 @@ export function cancelMessage(messageId: string) {
     throw new Error("Not connected — retrying...");
   }
   socket.emit("message:cancel", { messageId });
+}
+
+export async function sendMessageBatch(
+  messages: Array<{ messageId: string; receiverId: string }>,
+  options: {
+    durationMs: number; layout: MediaLayout; delayMs: number;
+    fadeInMs: number; fadeOutMs: number; audioDelayMs: number;
+    captionLayout?: CaptionLayout;
+  },
+): Promise<{ accepted: number; synchronized: boolean }> {
+  const sock = requireSocket();
+  const result = await sock.timeout(15_000).emitWithAck("message:send-batch", { messages, ...options }) as {
+    ok: boolean; reason?: string; synchronized?: boolean;
+    results?: Array<{ messageId: string; ok: boolean }>;
+  };
+  if (!result?.results) throw new Error(result?.reason || "Send was not accepted — please retry");
+  const accepted = result.results.filter(item => item.ok).length;
+  if (!accepted) throw new Error("No ping accepted — check recent sends for the reason");
+  return { accepted, synchronized: Boolean(result.synchronized) };
 }
 
 export function getSocket() {
