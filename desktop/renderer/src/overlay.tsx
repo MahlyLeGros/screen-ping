@@ -48,14 +48,22 @@ function stopAllMedia(root: ParentNode | Document = document) {
   });
 }
 
-function preloadMedia(payload: OverlayPayload): Promise<void> {
-  if (payload.mediaType === "audio") return Promise.resolve();
+function preloadMedia(payload: OverlayPayload): Promise<boolean> {
+  if (payload.mediaType === "audio") return Promise.resolve(true);
 
-  const load = new Promise<void>((resolve) => {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => done(false), PRELOAD_MEDIA_TIMEOUT_MS);
+    function done(loaded: boolean) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(loaded);
+    }
     if (payload.mediaType === "image") {
       const img = new Image();
-      img.onload = () => resolve();
-      img.onerror = () => resolve();
+      img.onload = () => done(img.naturalWidth > 0);
+      img.onerror = () => done(false);
       img.src = payload.mediaUrl;
       return;
     }
@@ -63,19 +71,13 @@ function preloadMedia(payload: OverlayPayload): Promise<void> {
     const video = document.createElement("video");
     video.preload = "auto";
     video.muted = true; // unlock faster metadata load; display element is unmuted
-    const done = () => resolve();
-    video.onloadeddata = done;
-    video.oncanplay = done;
-    video.onerror = done;
+    video.onloadeddata = () => done(true);
+    video.oncanplay = () => done(true);
+    video.onerror = () => done(false);
     video.src = payload.mediaUrl;
     void video.load();
   });
 
-  const timeout = new Promise<void>((resolve) => {
-    setTimeout(resolve, PRELOAD_MEDIA_TIMEOUT_MS);
-  });
-
-  return Promise.race([load, timeout]);
 }
 
 function OverlayApp() {
@@ -307,8 +309,13 @@ function OverlayApp() {
     let cancelled = false;
 
     void (async () => {
-      await preloadMedia(payload);
+      const loaded = await preloadMedia(payload);
       if (cancelled || sessionRef.current?.payload.messageId !== messageId) return;
+      if (!loaded) {
+        setSession(null);
+        window.electronAPI.notifyOverlayFailed(messageId);
+        return;
+      }
       setSession({ payload, ready: true });
       window.electronAPI.notifyOverlayReady(messageId);
     })();
@@ -389,14 +396,16 @@ function OverlayApp() {
           {mediaReady && payload?.mediaType === "image" && (
             <div key={payload.messageId} className="media-frame" style={frameStyle(layout)}>
               <div style={flipStyle(layout)}>
-                <img src={payload.mediaUrl} alt="" style={fitStyle!} draggable={false} />
+                <img src={payload.mediaUrl} alt="" style={fitStyle!} draggable={false}
+                  onError={() => window.electronAPI.notifyOverlayFailed(payload.messageId)} />
               </div>
             </div>
           )}
           {mediaReady && payload?.mediaType === "video" && (
             <div key={payload.messageId} className="media-frame" style={frameStyle(layout)}>
               <div style={flipStyle(layout)}>
-                <video src={payload.mediaUrl} style={fitStyle!} autoPlay muted={false} playsInline />
+                <video src={payload.mediaUrl} style={fitStyle!} autoPlay muted={false} playsInline
+                  onError={() => window.electronAPI.notifyOverlayFailed(payload.messageId)} />
               </div>
             </div>
           )}

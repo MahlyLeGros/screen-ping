@@ -75,30 +75,29 @@ def sign_media_url(path: str | None, user_id: str, paths: list[str]) -> str | No
 
 
 def can_access_media(db: Session, user_id: str, storage_path: str) -> bool:
-    message = (
+    messages = (
         db.query(MediaMessage)
         .filter(
             or_(
                 MediaMessage.storage_path == storage_path,
                 MediaMessage.audio_path == storage_path,
                 MediaMessage.source_layers.contains(storage_path),
-            )
+            ),
+            or_(MediaMessage.sender_id == user_id, MediaMessage.receiver_id == user_id),
         )
-        .first()
+        .all()
     )
-    if not message:
-        return False
-    source_paths = {item["path"] for item in parse_source_layers(message.source_layers)}
-    if storage_path in source_paths and storage_path not in (message.storage_path, message.audio_path):
-        if user_id != message.sender_id:
-            return False
-    if user_id not in (message.sender_id, message.receiver_id):
-        return False
-    if message.sender_id == message.receiver_id:
-        return True
-    if is_blocked(db, message.sender_id, message.receiver_id):
-        return False
-    return are_friends(db, message.sender_id, message.receiver_id)
+    # Batch recipients share a file but each has a separate message record.
+    for message in messages:
+        primary_path = storage_path in (message.storage_path, message.audio_path)
+        source_paths = {item["path"] for item in parse_source_layers(message.source_layers)}
+        if not primary_path and (storage_path not in source_paths or user_id != message.sender_id):
+            continue
+        if message.sender_id == message.receiver_id:
+            return True
+        if not is_blocked(db, message.sender_id, message.receiver_id) and are_friends(db, message.sender_id, message.receiver_id):
+            return True
+    return False
 
 
 ACTIVE_MEDIA_STATUSES = (

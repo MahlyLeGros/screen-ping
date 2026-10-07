@@ -84,6 +84,7 @@ function animateWindowOpacity(win: BrowserWindow, from: number, to: number, dura
 export class OverlayQueue {
   private queue: DeliverPayload[] = [];
   private showing = false;
+  private finishing = false;
   private overlayWindow: BrowserWindow | null = null;
   private onAck: AckCallback;
   private currentMessageId: string | null = null;
@@ -143,6 +144,11 @@ export class OverlayQueue {
     });
     ipcMain.on("overlay:ready", (_event, data: { messageId: string }) => {
       void this.onOverlayReady(data.messageId);
+    });
+    ipcMain.on("overlay:failed", (event, data: { messageId: string }) => {
+      if (event.sender === this.overlayWindow?.webContents && data.messageId === this.currentMessageId) {
+        void this.finish("failed");
+      }
     });
   }
 
@@ -362,6 +368,7 @@ export class OverlayQueue {
 
     showOverlayWindow(this.overlayWindow);
     await animateWindowOpacity(this.overlayWindow, 0, 1, this.currentFadeInMs);
+    if (this.currentMessageId !== messageId || this.finishing || !this.showing) return;
     this.overlayFullyVisible = true;
     this.startTopMostKeeper();
 
@@ -405,6 +412,8 @@ export class OverlayQueue {
   }
 
   private async finish(status: "delivered" | "failed" | "paused") {
+    if (!this.showing || this.finishing) return;
+    this.finishing = true;
     this.stopTopMostKeeper();
     this.clearReadyTimeout();
     await this.stopOverlayMedia();
@@ -442,6 +451,7 @@ export class OverlayQueue {
     if (this.overlayWindow && !this.overlayWindow.isDestroyed() && !drawOverlay.isActive()) {
       parkOverlayWindow(this.overlayWindow);
     }
+    this.finishing = false;
     setTimeout(() => void this.processNext(), 50);
   }
 }
