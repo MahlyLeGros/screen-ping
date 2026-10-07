@@ -190,17 +190,23 @@ try {
     $installerRemote = "$remoteUpdates/$installerName"
     $appDesktop = "$($cfg.RemotePath)/server/app/desktop"
     $moveCmd = @"
+set -e
 sudo mkdir -p '$remoteUpdates/v/$version'
 sudo cp -f '$staging/$installerName' '$installerRemote'
 sudo cp -f '$staging/$installerName.sig' '$installerRemote.sig'
 sudo cp -f '$staging/latest.yml' '$remoteUpdates/latest.yml'
 sudo cp -f '$staging/v/$version/latest.yml' '$remoteUpdates/v/$version/latest.yml'
+test -s '$installerRemote'
+test -s '$installerRemote.sig'
+test -s '$remoteUpdates/v/$version/latest.yml'
 sudo python3 '$staging/bootstrap-update-feeds.py' '$remoteUpdates' '$appDesktop/versions.json'
 sudo cp -f '$remoteUpdates/versions.json' '$appDesktop/versions.json' 2>/dev/null || true
 sudo chown -R www-data:www-data /var/www/screenping/desktop
 sudo chmod -R a+rX /var/www/screenping/desktop
 rm -rf '$staging/$installerName' '$staging/$installerName.sig' '$staging/latest.yml' '$staging/v' '$staging/bootstrap-update-feeds.py'
 "@
+    # SSH executes on Linux; CRLF would become part of remote filenames/arguments.
+    $moveCmd = $moveCmd.Replace("`r`n", "`n").Replace("`r", "`n")
     $move = Invoke-SSHCommand -SessionId $session.SessionId -Command $moveCmd -TimeOut 600
     if ($move.ExitStatus -ne 0) {
         if ($move.Error) { $move.Error | ForEach-Object { Write-Host $_ -ForegroundColor Red } }

@@ -281,6 +281,8 @@ function OverlayApp() {
 
     window.addEventListener("resize", scheduleDraw);
     scheduleDraw();
+    // Advertise readiness only after every ping and draw listener is installed.
+    window.electronAPI.notifyOverlayInitialized();
     return () => {
       window.removeEventListener("resize", scheduleDraw);
       if (animRef.current) cancelAnimationFrame(animRef.current);

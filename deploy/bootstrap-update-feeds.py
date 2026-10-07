@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import re
@@ -21,7 +22,8 @@ def sha512_file(path: Path) -> str:
     with path.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1024 * 1024), b""):
             h.update(chunk)
-    return h.hexdigest()
+    # electron-updater expects a Base64 digest, not the hexadecimal representation.
+    return base64.b64encode(h.digest()).decode("ascii")
 
 
 def write_feed(version: str, installer: Path) -> None:

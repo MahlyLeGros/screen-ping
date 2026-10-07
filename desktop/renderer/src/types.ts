@@ -16,6 +16,7 @@ export interface ElectronAPI {
   onShowOverlay: (callback: (payload: OverlayPayload) => void) => void;
   onHideOverlay: (callback: () => void) => void;
   notifyOverlayReady: (messageId: string) => void;
+  notifyOverlayInitialized: () => void;
   notifyOverlayCleared: () => void;
   onDrawBegin: (callback: (payload: unknown) => void) => void;
   onDrawStroke: (callback: (payload: unknown) => void) => void;

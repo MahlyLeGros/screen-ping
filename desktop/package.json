@@ -1,6 +1,6 @@
 {
   "name": "screen-ping-desktop",
-  "version": "1.0.62",
+  "version": "1.0.63",
   "description": "Screen Ping desktop receiver",
   "author": "Screen Ping",
   "main": "dist/main/main.js",

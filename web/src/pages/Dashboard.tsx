@@ -522,7 +522,9 @@ export default function DashboardPage() {
       setOverlayCaption("");
       setCaptionLayout(DEFAULT_CAPTION_LAYOUT);
       const replace = imageLayersRef.current.length === 0;
-      void addImageFiles(images, replace);
+      void addImageFiles(images, replace).catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Could not add image");
+      });
     },
     [addImageFiles],
   );
@@ -536,6 +538,23 @@ export default function DashboardPage() {
     [ingestMediaFiles],
   );
   const { dropActive: previewDropActive, dropHandlers: previewDropHandlers } = useFileDrop(ingestDroppedFiles);
+
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (tab !== "send" || loading || pageLoading || event.defaultPrevented) return;
+      const target = event.target;
+      if (target instanceof Element && target.closest("input, textarea, [contenteditable]:not([contenteditable='false']), [role='dialog']")) return;
+      const images = Array.from(event.clipboardData?.items ?? [])
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((image): image is File => image !== null);
+      if (images.length === 0) return;
+      event.preventDefault();
+      ingestMediaFiles(images);
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [tab, loading, pageLoading, ingestMediaFiles]);
 
   function onMediaFileChange(newFile: File | null) {
     if (!newFile) {
@@ -1183,7 +1202,7 @@ export default function DashboardPage() {
                 <h3 className="form-section-title">Media</h3>
                 <FilePicker
                   label="File"
-                  hint={isLayerCompose ? "Add more images as layers" : "Image(s) or video — multi-select for layers"}
+                  hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
                   accept="image/*,video/mp4,video/webm"
                   value={file}
                   onChange={onMediaFileChange}

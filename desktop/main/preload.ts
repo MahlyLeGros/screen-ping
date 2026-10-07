@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   notifyOverlayReady: (messageId: string) => {
     ipcRenderer.send("overlay:ready", { messageId });
   },
+  notifyOverlayInitialized: () => ipcRenderer.send("overlay:initialized"),
   notifyOverlayCleared: () => {
     ipcRenderer.send("overlay:cleared");
   },

@@ -70,6 +70,7 @@ let loginWindow: BrowserWindow | null = null;
 let mainWindow: BrowserWindow | null = null;
 let menuWindow: BrowserWindow | null = null;
 let overlayWindow: BrowserWindow | null = null;
+let overlayInitialized = false;
 let updateWindow: BrowserWindow | null = null;
 let lastMenuAnchor: Electron.Point | null = null;
 let menuHiddenAt = 0;
@@ -250,6 +251,8 @@ function reconnectSocket() {
     refreshTray();
     return;
   }
+  // The server may deliver pending pings immediately on connection.
+  if (!overlayInitialized || !overlayWindow || overlayWindow.isDestroyed()) return;
   connectSocket(
     (payload) => overlayQueue.enqueue(payload, store.get("paused")),
     (isConnected) => {
@@ -451,6 +454,12 @@ async function handleSessionExpired() {
 }
 
 async function bootstrap() {
+  ipcMain.on("overlay:initialized", (event) => {
+    if (!overlayWindow || overlayWindow.isDestroyed() || event.sender !== overlayWindow.webContents) return;
+    if (overlayInitialized) return;
+    overlayInitialized = true;
+    reconnectSocket();
+  });
   registerProtocolClient();
   setupAutoLaunch();
   setSessionExpiredHandler(handleSessionExpired);
@@ -646,7 +655,14 @@ async function bootstrap() {
 
 function startApp() {
   if (!overlayWindow || overlayWindow.isDestroyed()) {
+    overlayInitialized = false;
     overlayWindow = createOverlayWindow();
+    overlayWindow.webContents.on("did-start-loading", () => {
+      overlayInitialized = false;
+      disconnectSocket();
+      connected = false;
+      refreshTray();
+    });
     overlayQueue.setWindow(overlayWindow);
   }
 
