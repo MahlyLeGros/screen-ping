@@ -28,6 +28,15 @@
     @apply antialiased;
   }
 
+  /* Keep the Full HD visual proportions on QHD/4K, without changing the
+     editor's percentage coordinates or the receiver's screen resolution.
+     Height limits growth on ultrawide/short windows; browser zoom still works. */
+  @media (min-width: 1921px) and (min-height: 900px) {
+    html {
+      font-size: clamp(1rem, min(0.833333vw, 1.666667vh), 2rem);
+    }
+  }
+
   body {
     @apply font-sans text-slate-100;
   }
@@ -592,7 +601,7 @@
   }
 
   .form-section-title {
-    @apply font-display text-[11px] font-bold uppercase tracking-wider text-slate-400;
+    @apply font-display text-[0.6875rem] font-bold uppercase tracking-wider text-slate-400;
   }
 
   /* Layer list rows — inset ring follows radius; no nested borders/radii on children. */
@@ -758,7 +767,7 @@
   }
 
   .range-slider::-webkit-slider-thumb {
-    @apply -mt-[7px] h-[18px] w-[18px] appearance-none rounded-full border-2 border-void bg-irid-violet;
+    @apply -mt-[0.4375rem] h-[1.125rem] w-[1.125rem] appearance-none rounded-full border-2 border-void bg-irid-violet;
   }
 
   .range-slider::-moz-range-track {
@@ -766,7 +775,7 @@
   }
 
   .range-slider::-moz-range-thumb {
-    @apply h-[18px] w-[18px] rounded-full border-2 border-void bg-irid-violet;
+    @apply h-[1.125rem] w-[1.125rem] rounded-full border-2 border-void bg-irid-violet;
   }
 
   .color-value-slider {
@@ -778,7 +787,7 @@
   }
 
   .color-value-slider::-webkit-slider-thumb {
-    @apply h-[18px] w-[18px] appearance-none rounded-full border-2 border-white bg-transparent shadow-[0_0_0_1px_rgba(0,0,0,0.45)];
+    @apply h-[1.125rem] w-[1.125rem] appearance-none rounded-full border-2 border-white bg-transparent shadow-[0_0_0_1px_rgba(0,0,0,0.45)];
     margin-top: 1px;
   }
 
@@ -787,7 +796,7 @@
   }
 
   .color-value-slider::-moz-range-thumb {
-    @apply h-[18px] w-[18px] rounded-full border-2 border-white bg-transparent;
+    @apply h-[1.125rem] w-[1.125rem] rounded-full border-2 border-white bg-transparent;
   }
 
   .precision-slider {
@@ -1319,7 +1328,7 @@
   :root {
     --compose-toolbar-h: 2.75rem;
     --compose-recipients-h: 3.25rem;
-    --compose-recipients-extra-h: 150px;
+    --compose-recipients-extra-h: 9.375rem;
     --compose-preview-h: calc(100dvh - 9.5rem - var(--compose-recipients-h) - 0.5rem);
     --compose-frame-extra-h: 0px;
   }
@@ -1531,7 +1540,7 @@
     }
 
     .compose-recipients-bar .friend-tile-compact {
-      @apply flex w-[150px] min-w-[120px] shrink-0 flex-col items-center justify-center gap-2 rounded-xl p-2;
+      @apply flex w-[9.375rem] min-w-[7.5rem] shrink-0 flex-col items-center justify-center gap-2 rounded-xl p-2;
       height: calc(100% - 0.25rem);
       align-self: stretch;
     }
