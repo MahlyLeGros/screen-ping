@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import ComposeColumnGlows from "../components/ComposeColumnGlows";
+import { WidgetLayoutProvider, WidgetPane, MovableWidget, WidgetGrip, WidgetReset } from "../components/WidgetLayout";
 import TikTokImport from "../components/TikTokImport";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { MediaImportJob } from "../lib/api";
@@ -334,6 +335,7 @@ export default function DashboardPage() {
   const { setChrome } = useDashboardChrome();
   const [tab, setTab] = useState<Tab>("send");
   const mobile = useMediaQuery("(max-width: 767px)");
+  const widgetLayoutEnabled = useMediaQuery("(min-width: 1280px)");
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // Native details has an internal content box that is not a flex item.
   // Keep it on mobile only; desktop needs directly constrained flex children.
@@ -1098,6 +1100,7 @@ export default function DashboardPage() {
       ) : (
         <div id="panel-send" role="tabpanel" aria-labelledby="tab-send" className="flex min-h-0 flex-col gap-3 overflow-visible xl:flex-1">
           <form noValidate onSubmit={handleSend} className="compose-layout compose-layout-fill">
+            <WidgetLayoutProvider userId={currentUser?.id || "anonymous"} enabled={widgetLayoutEnabled}>
             <ComposeColumnGlows />
             <section className="compose-recipients-mobile compose-mobile-block order-0 panel p-3 xl:hidden" aria-label="Recipients">
               <FriendPicker
@@ -1111,9 +1114,10 @@ export default function DashboardPage() {
 
             <LibraryPanel className="compose-side compose-side-left panel order-2 min-h-0 p-3 sm:p-4 xl:order-none">
               {mobile && <summary className="mobile-library-summary">Saved pings &amp; recent sends</summary>}
-              <div className="compose-library-body flex min-h-0 flex-col gap-3">
+              <WidgetPane side="left" className="compose-library-body flex min-h-0 flex-col gap-3">
+              <MovableWidget id="saved">
               <section className="form-section compose-side-panel compose-side-saved flex min-h-0 flex-1 flex-col overflow-hidden">
-                <h3 className="form-section-title">Saved pings</h3>
+                <h3 className="form-section-title"><WidgetGrip id="saved" />Saved pings</h3>
                 {savedPings.length === 0 ? (
                   <EmptyState
                     title="No saved pings"
@@ -1149,8 +1153,10 @@ export default function DashboardPage() {
                 )}
               </section>
 
+              </MovableWidget>
+              <MovableWidget id="recent">
               <section className="form-section compose-side-panel compose-side-recent flex min-h-0 flex-1 flex-col overflow-hidden">
-                <h3 className="form-section-title">Recent sends</h3>
+                <h3 className="form-section-title"><WidgetGrip id="recent" />Recent sends</h3>
                 {history.length === 0 ? (
                   <EmptyState
                     title="No pings sent yet"
@@ -1188,7 +1194,8 @@ export default function DashboardPage() {
                   </ul>
                 )}
               </section>
-              </div>
+              </MovableWidget>
+              </WidgetPane>
             </LibraryPanel>
 
             <div className="compose-center-col order-1 flex min-h-0 flex-col xl:order-none">
@@ -1255,9 +1262,10 @@ export default function DashboardPage() {
             </div>
 
             <aside className="compose-side compose-side-right panel order-3 flex min-h-0 flex-col gap-3 p-3 sm:p-4 xl:order-none">
-              <div className="compose-side-right-body min-h-0 flex-1 space-y-3">
+              <WidgetPane side="right" className="compose-side-right-body min-h-0 flex-1 space-y-3">
+              <MovableWidget id="media">
               <section className="form-section compose-media-section space-y-2.5">
-                <h3 className="form-section-title">Media</h3>
+                <h3 className="form-section-title"><WidgetGrip id="media" />Media</h3>
                 <TikTokImport job={importJob} clipping={clippingEnabled} onChange={next => {
                   const firstReady = next?.status === "ready" && importJob?.status !== "ready";
                   if (next && next.id !== importJob?.id) setLayout(DEFAULT_LAYOUT);
@@ -1372,9 +1380,11 @@ export default function DashboardPage() {
                 )}
               </section>
 
+              </MovableWidget>
+              <MovableWidget id="timing">
               <TimingPanel className="form-section compose-advanced-section space-y-3">
                 {mobile ? <summary className="form-section-title cursor-pointer">Caption &amp; timing</summary>
-                  : <h3 className="form-section-title">Caption &amp; timing</h3>}
+                  : <h3 className="form-section-title"><WidgetGrip id="timing" />Caption &amp; timing</h3>}
                 <div>
                   <label htmlFor="caption" className="field-label">
                     Caption
@@ -1453,13 +1463,16 @@ export default function DashboardPage() {
                   />
                 </div>
               </TimingPanel>
-              </div>
+              </MovableWidget>
+              </WidgetPane>
+              <WidgetReset />
             </aside>
             <div className="compose-mobile-send">
               <button type="submit" disabled={!canSend} className="btn-primary w-full">
                 {loading ? "Sending…" : `Send ping · ${receiverIds.length} recipient${receiverIds.length === 1 ? "" : "s"}`}
               </button>
             </div>
+            </WidgetLayoutProvider>
           </form>
         </div>
       )}
