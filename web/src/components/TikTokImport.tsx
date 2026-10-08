@@ -51,12 +51,12 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
     </div>
-    {(error || job) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
+    {(error || job?.error || (job && job.status !== "ready")) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
       {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : "")}
     </p>}
     {job?.status === "ready" && <div>
       <span className="field-label">File</span>
-      <div className="upload-zone px-3 py-3 pr-8">
+      <div className="upload-zone px-3 py-3">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 bg-transparent text-left"
           onClick={() => { urlInput.current?.scrollIntoView({ block: "center", behavior: "smooth" }); urlInput.current?.focus(); }}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-base text-slate-400">✓</span>
@@ -65,15 +65,20 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
             <span className="block text-xs text-slate-500">Click to replace</span>
           </span>
         </button>
+        {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Modify excerpt" title="Modify excerpt" disabled={busy}
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-400 transition hover:text-purple-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
+          onClick={() => setClipOpen(true)}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2v-6M16 3a2.1 2.1 0 0 1 3 3l-8 8-4 1 1-4z" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        </button>}
         <button type="button" aria-label="Remove imported video" title="Remove imported video" disabled={busy}
-          className="absolute right-2 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded p-2 text-slate-500 transition hover:text-red-400"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-red-400"
           onClick={() => { setBusy(true); void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false)); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" /></svg>
         </button>
       </div>
     </div>}
-    {job?.preview_url && job.source_duration_ms && ["awaiting_selection", "ready"].includes(job.status) && <button type="button" className="btn-secondary" onClick={() => setClipOpen(true)}>
-      {job.status === "ready" ? "Modify excerpt" : "Choose excerpt"}
+    {job?.preview_url && job.source_duration_ms && job.status === "awaiting_selection" && <button type="button" className="btn-secondary" onClick={() => setClipOpen(true)}>
+      Choose excerpt
     </button>}
     {clipOpen && job?.preview_url && <VideoClipDialog key={job.id} job={job} onClose={() => setClipOpen(false)}
       onChange={onChange} onDraft={(start_ms, end_ms, volume) => onChange({ ...job, start_ms, end_ms, volume,
