@@ -16,11 +16,11 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
   callback.current = onChange;
   const active = Boolean(job && ["queued", "fetching", "optimizing", "uploading", "queued_clip", "cropping"].includes(job.status));
   useEffect(() => {
-    if (job?.status === "awaiting_selection" && openedJob.current !== job.id) {
+    if (job?.status === "awaiting_selection" && (job.source_duration_ms ?? 0) > 30000 && openedJob.current !== job.id) {
       openedJob.current = job.id; setClipOpen(true);
     }
     if (!job) { openedJob.current = null; setClipOpen(false); }
-  }, [job?.id, job?.status]);
+  }, [job?.id, job?.status, job?.source_duration_ms]);
   useEffect(() => {
     if (!job || !active) return;
     let disposed = false;
