@@ -141,7 +141,7 @@ function DashboardHeaderChrome({ fullWidth = false }: { fullWidth?: boolean }) {
           <p className="font-display text-sm font-extrabold leading-tight text-slate-100">Dashboard</p>
         </div>
         <div
-          className={`pill-group shrink-0 ${fullWidth ? "w-full" : "w-full sm:w-fit"}`}
+          className={`pill-group shrink-0 ${fullWidth ? "w-fit max-w-full" : "w-full sm:w-fit"}`}
           role="tablist"
           aria-label="Dashboard sections"
         >
