@@ -1828,6 +1828,9 @@
 .clip-timeline input::-webkit-slider-thumb { appearance: none; width: 24px; height: 36px; border: 0; border-radius: 0; background: transparent; pointer-events: auto; cursor: ew-resize; }
 .clip-timeline input::-moz-range-thumb { width: 24px; height: 36px; border: 0; border-radius: 0; background: transparent; pointer-events: auto; cursor: ew-resize; }
 .clip-timeline input:focus-visible { outline: 2px solid #a78bfa; outline-offset: 2px; }
+.clip-boundary { transition: background .12s, border-color .12s, box-shadow .12s; }
+.clip-start-input:is(:hover, :active, :focus-visible) ~ .clip-boundary-start,
+.clip-end-input:is(:hover, :active, :focus-visible) ~ .clip-boundary-end { background: #ddd6fe; border-color: #f5f3ff; box-shadow: 0 0 6px rgba(167,139,250,.5); }
 @media (max-width: 767px) { .clip-dialog-backdrop { padding: 0; } .clip-dialog { width: 100%; height: 100dvh; max-height: none; border-radius: 0; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); } }
 /* Keep desktop proportions; mobile follows the order of preparing a ping. */
 .compose-mobile-send, .mobile-library-summary { display: none; }
