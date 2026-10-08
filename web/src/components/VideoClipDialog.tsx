@@ -4,6 +4,23 @@ import { api, type MediaImportJob } from "../lib/api";
 
 const timeLabel = (ms: number) => `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(1).padStart(4, "0")}`;
 
+function PreviewIcon({ kind }: { kind: "start" | "back" | "play" | "pause" | "forward" | "end" | "sound" | "mute" }) {
+  const paths = {
+    start: "M4 5h3v14H4z M19 5v14L8 12z",
+    back: "M12 5v14L2 12z M22 5v14l-10-7z",
+    play: "M7 4v16l14-8z",
+    pause: "M6 4h4v16H6z M14 4h4v16h-4z",
+    forward: "M2 5v14l10-7z M12 5v14l10-7z",
+    end: "M17 5h3v14h-3z M5 5v14l11-7z",
+  };
+  return <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    {kind === "sound" || kind === "mute" ? <g fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 5 6 9H3v6h3l5 4z" />
+      <path d={kind === "mute" ? "m16 9 6 6m0-6-6 6" : "M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"} />
+    </g> : <path fill="currentColor" d={paths[kind]} />}
+  </svg>;
+}
+
 export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   job: MediaImportJob; onClose: () => void; onChange: (job: MediaImportJob) => void; onDraft: (start: number, end: number) => void;
 }) {
@@ -98,6 +115,12 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     try { await player.play(); }
     catch { setError("Playback could not start. Please try again."); }
   }
+  function seekPreview(position: number) {
+    const next = Math.max(start, Math.min(end, position));
+    if (video.current) video.current.currentTime = next / 1000;
+    setPreviewMs(next);
+    if (next >= end) video.current?.pause();
+  }
   async function confirm() {
     setBusy(true); setError("");
     try { onChange(await api.selectVideoClip(job.id, start, end)); onClose(); }
@@ -117,19 +140,24 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onTimeUpdate={syncPreview} />
       <div className="clip-preview-controls">
-        <button type="button" className="btn-secondary" disabled={busy || previewFailed} onClick={() => void togglePlayback()}>
-          {playing ? "Pause excerpt" : "Play excerpt"}
+        <button type="button" className="clip-transport-button" aria-label="Go to excerpt start" title="Go to excerpt start" disabled={busy || previewFailed} onClick={() => seekPreview(start)}>
+          <PreviewIcon kind="start" />
         </button>
-        <input type="range" min={0} max={end - start} step={100} value={Math.min(end - start, Math.max(0, previewMs - start))}
-          aria-label="Preview position" disabled={busy || previewFailed} onChange={event => {
-            const next = start + Math.max(0, Math.min(end - start, Number(event.target.value)));
-            if (video.current) video.current.currentTime = next / 1000;
-            setPreviewMs(next);
-            if (next >= end) video.current?.pause();
-          }} />
-        <span className="text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
-        <button type="button" className="btn-ghost" aria-label={muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={muted}
-          onClick={() => setMuted(value => !value)}>{muted ? "Sound off" : "Sound on"}</button>
+        <button type="button" className="clip-transport-button" aria-label="Rewind two seconds" title="Rewind two seconds" disabled={busy || previewFailed} onClick={() => seekPreview(previewMs - 2000)}>
+          <PreviewIcon kind="back" />
+        </button>
+        <button type="button" className="clip-transport-button clip-play-button" aria-label={playing ? "Pause excerpt" : "Play excerpt"} title={playing ? "Pause excerpt" : "Play excerpt"} disabled={busy || previewFailed} onClick={() => void togglePlayback()}>
+          <PreviewIcon kind={playing ? "pause" : "play"} />
+        </button>
+        <button type="button" className="clip-transport-button" aria-label="Forward two seconds" title="Forward two seconds" disabled={busy || previewFailed} onClick={() => seekPreview(previewMs + 2000)}>
+          <PreviewIcon kind="forward" />
+        </button>
+        <button type="button" className="clip-transport-button" aria-label="Go to excerpt end" title="Go to excerpt end" disabled={busy || previewFailed} onClick={() => seekPreview(end)}>
+          <PreviewIcon kind="end" />
+        </button>
+        <span className="clip-preview-time text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
+        <button type="button" className="clip-transport-button" aria-label={muted ? "Enable preview sound" : "Mute preview sound"} title={muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={muted}
+          onClick={() => setMuted(value => !value)}><PreviewIcon kind={muted ? "mute" : "sound"} /></button>
       </div>
       <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
         <div className="clip-timeline-track" aria-hidden />
@@ -161,6 +189,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
           }} />
         <input type="range" min={0} max={sourceMs - minLength} step={100} value={start} aria-label="Excerpt start" onChange={e => changeStart(Number(e.target.value))} />
         <input type="range" min={minLength} max={sourceMs} step={100} value={end} aria-label="Excerpt end" onChange={e => changeEnd(Number(e.target.value))} />
+        <span className="clip-playhead" aria-hidden="true" style={{ left: `${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%` }} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <label className="field-label">Start (seconds)<input className="field-input" type="number" step={0.1} min={0} max={(sourceMs - minLength) / 1000} value={start / 1000} onChange={e => changeStart(e.target.valueAsNumber * 1000)} /></label>
