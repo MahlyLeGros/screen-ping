@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type MediaImportJob } from "../lib/api";
 import VideoClipDialog from "./VideoClipDialog";
 
@@ -6,7 +6,6 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
   job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; clipping?: boolean;
 }) {
   const [url, setUrl] = useState("");
-  const editGradientId = useId();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [videoName, setVideoName] = useState("TikTok video");
@@ -67,11 +66,10 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
           </span>
         </button>
         {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Modify excerpt" title="Modify excerpt" disabled={busy}
-          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-400 transition hover:text-purple-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
+          className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
           onClick={() => setClipOpen(true)}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <defs><linearGradient id={editGradientId} x1="0" y1="0" x2="1" y2="1"><stop stopColor="#ed00ef" /><stop offset="1" stopColor="#5300ff" /></linearGradient></defs>
-            <g stroke={`url(#${editGradientId})`} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.5 3.8H7.2a4.9 4.9 0 0 0-4.9 4.9v9a4.9 4.9 0 0 0 4.9 4.9h9a4.9 4.9 0 0 0 4.9-4.9v-4" />
               <path d="m8.2 16.6.6-4.3L18.2 3a2.6 2.6 0 0 1 3.7 3.7l-9.3 9.4-4.4.5Z" />
               <path d="m16.5 4.7 3.7 3.7" />
