@@ -54,6 +54,35 @@ def test_short_and_source_limits():
         with pytest.raises(ValueError): source_duration({"format": {"duration": value}})
 
 
+def test_tiktok_duration_is_verified_before_media_download():
+    from app.services.video_import import remote_duration
+    assert remote_duration({"duration": 180}, "tiktok") == 180
+    for value in (180.01, 1200, 3600):
+        with pytest.raises(ValueError, match="3 minutes"): remote_duration({"duration": value}, "tiktok")
+    for value in (None, 0, -1, "invalid", float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="verify video duration"): remote_duration({"duration": value}, "tiktok")
+    assert remote_duration({"duration": 1200}, "youtube") == 1200
+
+
+def test_long_tiktok_never_opens_the_media_download(tmp_path, monkeypatch):
+    yt_dlp = pytest.importorskip("yt_dlp")
+    from app.services import video_import
+    class Extractor:
+        def __init__(self, *args, **kwargs): pass
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def add_info_extractor(self, extractor): pass
+        def extract_info(self, url, download):
+            assert download is False
+            return {"duration": 3600, "url": "https://v1.tiktokcdn.com/large.mp4"}
+        def urlopen(self, request): raise AssertionError("A long video must not be downloaded")
+    monkeypatch.setattr(yt_dlp, "YoutubeDL", Extractor)
+    monkeypatch.setattr(video_import, "install_network_guard", lambda _: None)
+    with pytest.raises(ValueError, match="3 minutes"):
+        video_import.fetch_source("https://vm.tiktok.com/ABC/", tmp_path)
+    assert not list(tmp_path.iterdir())
+
+
 @pytest.fixture
 def db():
     engine = create_engine("sqlite:///:memory:")

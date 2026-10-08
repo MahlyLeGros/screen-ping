@@ -55,6 +55,17 @@ def source_duration(metadata):
     return round(duration * 1000)
 
 
+def remote_duration(info, platform):
+    try: duration = float(info.get("duration"))
+    except (TypeError, ValueError): raise ValueError("Could not verify video duration; upload a file instead")
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Could not verify video duration; upload a file instead")
+    limit = 180 if platform == "tiktok" else 1200
+    if duration > limit:
+        raise ValueError("TikTok videos must be no longer than 3 minutes" if platform == "tiktok" else "Source video must be no longer than 20 minutes")
+    return duration
+
+
 def validate_clip(duration_ms, start_ms, end_ms):
     if type(start_ms) is not int or type(end_ms) is not int or type(duration_ms) is not int:
         raise ValueError("Clip times must be integer milliseconds")
@@ -168,9 +179,7 @@ def fetch_source(url, directory):
         info = ydl.extract_info(url, download=False)
         if not info or info.get("_type") in ("playlist", "multi_video") or info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
             raise ValueError("Only public non-live videos are supported")
-        duration = float(info.get("duration") or 0)
-        if not math.isfinite(duration) or duration > 1200:
-            raise ValueError("Source video must be no longer than 20 minutes")
+        remote_duration(info, platform)
         streams = info.get("requested_formats") or [info]
         if not 1 <= len(streams) <= 2:
             raise ValueError("Unsupported source streams")
@@ -193,6 +202,9 @@ def fetch_source(url, directory):
     if len(paths) == 2:
         source = directory / "merged.mp4"
         run_ffmpeg(["-i", str(paths[0]), "-i", str(paths[1]), "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-y", str(source)], 60)
+    # Check the actual file too: remote metadata is not trusted as proof.
+    if platform == "tiktok" and source_duration(probe(source)) > 180000:
+        raise ValueError("TikTok videos must be no longer than 3 minutes")
     title = str(info.get("title") or platform.title() + " video")
     creator = str(info.get("uploader") or info.get("creator") or "")
     return source, ((creator + " · " if creator and creator not in title else "") + title)[:300]

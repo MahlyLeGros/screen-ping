@@ -60,6 +60,8 @@ def import_video(url: str, directory: Path) -> dict:
         info = ydl.extract_info(url, download=False)
         if not info or info.get("_type") in ("playlist", "multi_video") or info.get("is_live"):
             raise ValueError("Only public video posts are supported")
+        from app.services.video_import import remote_duration
+        remote_duration(info, "tiktok")
         if info.get("duration") and float(info["duration"]) > 180:
             raise ValueError("Video must be no longer than three minutes")
         media_url = validate_url(info.get("url", ""))
