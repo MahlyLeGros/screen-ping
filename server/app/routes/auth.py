@@ -23,7 +23,7 @@ from app.auth_cookies import (
 from app.config import settings
 from app.database import get_db
 from app.models import EmailVerificationPurpose, User
-from app.models import DeviceSession, EmailVerification, Friendship, MediaMessage, RefreshSession, utcnow
+from app.models import DeviceSession, EmailVerification, Friendship, MediaMessage, MediaImport, RefreshSession, utcnow
 from app.realtime import check_login_rate_limit, presence_manager, check_reset_password_rate_limit
 from app.schemas import (
     AuthProvidersResponse,
@@ -468,6 +468,8 @@ def delete_account(
         (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)
     ).all()
     media_paths = {path for message in messages for path in media_paths_for_message(message)}
+    media_paths.update(job.storage_path for job in db.query(MediaImport).filter(MediaImport.user_id == current_user.id).all() if job.storage_path)
+    db.query(MediaImport).filter(MediaImport.user_id == current_user.id).delete(synchronize_session=False)
     db.query(MediaMessage).filter(
         (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)
     ).delete(synchronize_session=False)

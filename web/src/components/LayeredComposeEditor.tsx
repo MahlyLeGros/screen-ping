@@ -824,6 +824,21 @@ function LayeredComposeEditor({
 
   const layoutControls = (
     <div className="flex flex-wrap items-center gap-2">
+      {activeLayer && <details className="layout-precision-controls">
+        <summary className="pill-btn cursor-pointer">Position &amp; rotation</summary>
+        <div className="grid grid-cols-2 gap-2 p-2">
+          {(["x", "y", "width", "height", "rotation"] as const).map(key => (
+            <label key={key} className="text-xs text-slate-400">{key}
+              <input type="number" className="field-input" aria-label={`Layer ${key}`} step={1}
+                value={activeLayer.layout[key] ?? 0} onChange={event => {
+                  const value = event.target.valueAsNumber;
+                  if (Number.isFinite(value)) onLayersChange(layers.map(layer => layer.id === activeLayer.id
+                    ? { ...layer, layout: clampLayout({ ...layer.layout, [key]: value }) } : layer));
+                }} />
+            </label>
+          ))}
+        </div>
+      </details>}
       <div className="pill-group !gap-0.5 !p-0.5">
         <button
           type="button"

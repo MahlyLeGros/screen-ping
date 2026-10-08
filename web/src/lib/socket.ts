@@ -164,11 +164,13 @@ export async function sendMessageBatch(
   const sock = requireSocket();
   const result = await sock.timeout(15_000).emitWithAck("message:send-batch", { messages, ...options }) as {
     ok: boolean; reason?: string; synchronized?: boolean;
-    results?: Array<{ messageId: string; ok: boolean }>;
+    results?: Array<{ messageId: string; ok: boolean; reason?: string }>;
   };
   if (!result?.results) throw new Error(result?.reason || "Send was not accepted — please retry");
   const accepted = result.results.filter(item => item.ok).length;
-  if (!accepted) throw new Error("No ping accepted — check recent sends for the reason");
+  if (!accepted) throw new Error(result.results.some(item => item.reason === "desktop_update_required")
+    ? "Your friend's desktop app needs an update to play videos longer than 30 seconds"
+    : "No ping accepted — check recent sends for the reason");
   return { accepted, synchronized: Boolean(result.synchronized) };
 }
 

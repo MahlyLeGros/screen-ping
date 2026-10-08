@@ -5,6 +5,7 @@ import { pointerPctFromRect, rectFromDom } from "../lib/layoutEditorMath";
 import {
   emitDrawStroke,
   endDrawSession,
+  emitDrawClear,
   startDrawSession,
   type DrawPoint,
 } from "../lib/socket";
@@ -60,10 +61,11 @@ function makeSessionId() {
 interface DrawPanelProps {
   friends: Friend[];
   currentUser: User | null;
+  selectedIds: string[];
+  onSelectedIdsChange: (ids: string[]) => void;
 }
 
-export default function DrawPanel({ friends, currentUser }: DrawPanelProps) {
-  const [receiverIds, setReceiverIds] = useState<string[]>([]);
+export default function DrawPanel({ friends, currentUser, selectedIds: receiverIds, onSelectedIdsChange: setReceiverIds }: DrawPanelProps) {
   const [color, setColor] = useState(DEFAULT_COLOR);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [durationMs, setDurationMs] = useState(DEFAULT_DURATION_MS);
@@ -716,6 +718,21 @@ export default function DrawPanel({ friends, currentUser }: DrawPanelProps) {
         <div className="draw-aside-body min-h-0 flex-1 space-y-3 overflow-y-auto">
           <section className="form-section space-y-2">
             <h3 className="form-section-title">Brush</h3>
+            <div className="flex gap-2">
+              <button type="button" className="btn-secondary" disabled={!sessionId} onClick={() => {
+                const id = sessionIdRef.current;
+                if (id) { try { emitDrawClear(id, receiverIdsRef.current); } catch { setStatus("Could not clear; try again"); } }
+                strokesRef.current = []; pendingPointsRef.current = [];
+                const canvas = canvasRef.current;
+                if (canvas) canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+              }}>Clear drawing</button>
+              <button type="button" className="btn-secondary" disabled={!sessionId} onClick={() => {
+                const id = sessionIdRef.current;
+                if (id) void endDrawSession(id, receiverIdsRef.current).catch(() => setStatus("Could not stop; try again"));
+                sessionIdRef.current = null; setSessionId(null); drawingRef.current = false;
+                pendingPointsRef.current = []; strokesRef.current = [];
+              }}>Stop</button>
+            </div>
             <ColorWheelPicker color={color} onChange={setColor} />
             <PrecisionSlider
               label="Thickness"

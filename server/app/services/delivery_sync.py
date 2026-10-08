@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 @dataclass
 class DeliveryGroup:
     delay_ms: int = 0
+    timeout_seconds: int = 30
     targets: dict[str, set[str]] = field(default_factory=dict)
     ready: set[tuple[str, str]] = field(default_factory=set)
     sealed: bool = False

@@ -99,7 +99,7 @@ async function applyFreshAuth(): Promise<boolean> {
     return false;
   }
   if (socket) {
-    socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 };
+    socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1, long_video: 1 };
   }
   return true;
 }
@@ -118,7 +118,7 @@ export function connectSocket(
   if (!token) return;
 
   socket = io(serverUrl, {
-    auth: { token, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 },
+    auth: { token, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1, long_video: 1 },
     transports: ["websocket", "polling"],
     tryAllTransports: true,
     reconnection: true,
@@ -164,7 +164,7 @@ export function connectSocket(
 
     const result = await refreshAccessToken();
     if (result.ok && socket) {
-      socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1 };
+      socket.auth = { token: result.accessToken, client_type: "desktop", app_version: app.getVersion(), delivery_sync: 1, long_video: 1 };
       if (!socket.connected) socket.connect();
       return;
     }

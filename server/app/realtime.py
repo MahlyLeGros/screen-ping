@@ -37,6 +37,7 @@ class PresenceManager:
         self._user_sockets: dict[str, set[str]] = defaultdict(set)
         self._socket_users: dict[str, str] = {}
         self._socket_client_types: dict[str, str] = {}
+        self._socket_video_limits: dict[str, int] = {}
         self._user_desktop_versions: dict[str, str] = {}
         self._user_last_active: dict[str, datetime] = {}
 
@@ -46,16 +47,19 @@ class PresenceManager:
         sid: str,
         client_type: str = "web",
         app_version: str | None = None,
+        max_video_duration_ms: int = 30_000,
     ) -> None:
         self._user_sockets[user_id].add(sid)
         self._socket_users[sid] = user_id
         self._socket_client_types[sid] = client_type
+        self._socket_video_limits[sid] = max_video_duration_ms
         if client_type == "desktop" and app_version:
             self._user_desktop_versions[user_id] = app_version
 
     def disconnect(self, sid: str) -> str | None:
         user_id = self._socket_users.pop(sid, None)
         self._socket_client_types.pop(sid, None)
+        self._socket_video_limits.pop(sid, None)
         if user_id and sid in self._user_sockets.get(user_id, set()):
             self._user_sockets[user_id].discard(sid)
             if not self._user_sockets[user_id]:
@@ -69,6 +73,10 @@ class PresenceManager:
         if not self.desktop_sids_for_user(user_id):
             return None
         return self._user_desktop_versions.get(user_id)
+
+    def supports_long_video(self, user_id: str) -> bool:
+        sids = self.desktop_sids_for_user(user_id)
+        return bool(sids) and all(self._socket_video_limits.get(sid, 30_000) >= 180_000 for sid in sids)
 
     def touch_activity(self, user_id: str) -> None:
         self._user_last_active[user_id] = datetime.now(timezone.utc)

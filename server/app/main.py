@@ -29,7 +29,7 @@ from app.services.media_access import (
 from app.config import settings
 from app.database import Base, engine, SessionLocal
 from app.realtime import cleanup_loop
-from app.routes import auth, desktop, friends, media
+from app.routes import auth, desktop, friends, media, imports
 from app.socket_events import pending_expire_loop, sio
 
 # Import models so metadata is registered
@@ -42,6 +42,14 @@ def _migrate_sqlite_columns() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
+    if "media_messages" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("media_messages")}
+        with engine.begin() as conn:
+            if "media_duration_ms" not in cols:
+                conn.execute(text("ALTER TABLE media_messages ADD COLUMN media_duration_ms INTEGER"))
+            if "expires_at" not in cols:
+                date_type = "DATETIME" if settings.database_url.startswith("sqlite") else "TIMESTAMPTZ"
+                conn.execute(text(f"ALTER TABLE media_messages ADD COLUMN expires_at {date_type}"))
     if settings.database_url.startswith("sqlite"):
         if "media_messages" in insp.get_table_names():
             cols = {c["name"] for c in insp.get_columns("media_messages")}
@@ -177,11 +185,12 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(friends.router, prefix="/api")
 app.include_router(media.router, prefix="/api")
 app.include_router(desktop.router, prefix="/api")
+app.include_router(imports.router, prefix="/api")
 
 
 @app.get("/api/media/capabilities")
 def api_capabilities():
-    return {"avatar_upload": True, "batch_upload": True, "api_version": 2}
+    return {"avatar_upload": True, "batch_upload": True, "tiktok_import": settings.tiktok_import_enabled, "api_version": 3}
 
 
 @app.post("/api/media/avatar", response_model=UserResponse)

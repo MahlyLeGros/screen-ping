@@ -241,7 +241,7 @@ function normalizeErrorDetail(detail: unknown, fallback = "Request failed"): str
 
 async function publicRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = authHeaders(options.headers);
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   const res = await fetch(apiUrl(path), { ...options, headers, credentials: FETCH_CREDENTIALS });
@@ -264,7 +264,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getValidAccessToken();
   const headers = authHeaders(options.headers);
   if (token) headers.set("Authorization", `Bearer ${token}`);
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -294,6 +294,14 @@ export interface UploadResult {
   media_type: string;
   media_url: string;
   audio_url?: string;
+}
+
+export interface MediaImportJob {
+  id: string;
+  status: "queued" | "fetching" | "optimizing" | "ready" | "failed" | "cancelled";
+  duration_ms: number | null;
+  media_url: string | null;
+  error: string | null;
 }
 
 export interface LayerUploadInput {
@@ -370,6 +378,20 @@ async function parseUploadError(res: Response): Promise<never> {
 }
 
 export const api = {
+  startTikTokImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url }) }),
+  importStatus: (id: string) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}`),
+  cancelImport: (id: string) => request<{ ok: boolean }>(`/api/media/imports/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  sendImport: async (id: string, receiverIds: string[], durationMs: number, caption?: string, sound?: File) => {
+    const body = new FormData();
+    body.append("receiver_ids", receiverIds.join(","));
+    body.append("duration_ms", String(durationMs));
+    if (caption) body.append("caption", caption);
+    if (sound) body.append("sound_file", normalizeUploadFile(sound), sound.name);
+    const result = await request<{ uploads: UploadResult[] }>(`/api/media/imports/${encodeURIComponent(id)}/send`, {
+      method: "POST", body,
+    });
+    return result.uploads;
+  },
   authProviders: () => publicRequest<{ google_client_id: string | null }>("/api/auth/providers"),
   googleAuth: (credential: string, username?: string, acceptTerms?: boolean, rememberMe = true) =>
     publicRequest<GoogleAuthResponse>("/api/auth/google", {

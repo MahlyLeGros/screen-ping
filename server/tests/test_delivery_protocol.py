@@ -52,6 +52,23 @@ def batch():
             "durationMs": 2000, "delayMs": 0}
 
 
+def test_long_video_requires_capability_and_keeps_full_duration(protocol):
+    sessions, peers, emitted = protocol
+    with sessions() as db:
+        msg = db.get(MediaMessage, "ma")
+        msg.media_type = MediaType.video
+        msg.media_duration_ms = 120000
+        db.commit()
+    data = {"messageId": "ma", "receiverId": "alice", "durationMs": 120000}
+    result = asyncio.run(events._dispatch_message("web", data))
+    assert result["reason"] == "desktop_update_required"
+    assert not any(event == "message:deliver" for event, _, _ in emitted)
+    peers["a"]["max_video_duration_ms"] = 180000
+    result = asyncio.run(events._dispatch_message("web", data))
+    assert result["ok"]
+    assert next(data["durationMs"] for event, data, _ in emitted if event == "message:deliver") == 120000
+
+
 def test_group_waits_for_slow_peer_then_uses_one_start_time(protocol):
     _, _, emitted = protocol
     async def run():

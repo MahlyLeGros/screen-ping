@@ -71,6 +71,7 @@ async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None
                 continue
             # Start expiry at the scheduled display, not before a deliberate delay.
             message.dispatched_at = utcnow() + timedelta(milliseconds=1500 + group.delay_ms)
+            message.expires_at = message.dispatched_at + timedelta(milliseconds=max(30_000, message.media_duration_ms or 0) + 60_000)
             db.commit()
             for dsid in ready_sids:
                 await sio.emit("message:start", {"messageId": message_id, "startAt": start_at}, to=dsid)
@@ -81,7 +82,7 @@ async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None
 
 
 async def _expire_delivery_group(group_id: str) -> None:
-    await asyncio.sleep(30)
+    await asyncio.sleep(_delivery_groups[group_id].timeout_seconds)
     await _start_delivery_group(group_id, timeout=True)
 
 
@@ -127,12 +128,14 @@ async def message_send_batch(sid, data):
         # Serial dispatch preserves the same batch order across recipients.
         socket_ids = {dsid for item in items for dsid in presence_manager.desktop_sids_for_user(item["receiverId"])}
         supports_sync = bool(socket_ids)
+        long_queue = bool(socket_ids)
         for dsid in socket_ids:
             desktop_session = await sio.get_session(dsid)
             supports_sync = supports_sync and desktop_session.get("delivery_sync") == 1
+            long_queue = long_queue and desktop_session.get("max_video_duration_ms", 30_000) >= 180_000
         group_id = str(uuid.uuid4()) if supports_sync and len(_delivery_groups) < 200 else None
         if group_id:
-            _delivery_groups[group_id] = DeliveryGroup(delay_ms=sanitize_delivery_options(data)["delayMs"])
+            _delivery_groups[group_id] = DeliveryGroup(delay_ms=sanitize_delivery_options(data)["delayMs"], timeout_seconds=600 if long_queue else 30)
         results = []
         try:
             for item in items:
@@ -190,7 +193,8 @@ async def connect(sid, environ, auth):
             return False
         if payload.get("tv", 0) != int(getattr(user, "token_version", 0) or 0):
             return False
-        presence_manager.connect(user_id, sid, client_type, app_version)
+        presence_manager.connect(user_id, sid, client_type, app_version,
+                                 180_000 if client_type == "desktop" and (auth or {}).get("long_video") == 1 else 30_000)
         await _broadcast_presence(db, user_id)
         if client_type == "web":
             await _sync_friend_presence_for(db, user_id, sid)
@@ -202,7 +206,8 @@ async def connect(sid, environ, auth):
     finally:
         db.close()
     await sio.save_session(sid, {"user_id": user_id, "client_type": client_type,
-                                 "delivery_sync": (auth or {}).get("delivery_sync") if client_type == "desktop" else None})
+                                 "delivery_sync": (auth or {}).get("delivery_sync") if client_type == "desktop" else None,
+                                 "max_video_duration_ms": 180_000 if client_type == "desktop" and (auth or {}).get("long_video") == 1 else 30_000})
     return True
 
 
@@ -344,6 +349,22 @@ async def _dispatch_message(sid, data, _group_id=None):
             return
 
         message = db.get(MediaMessage, message_id)
+        desktop_sids = presence_manager.desktop_sids_for_user(receiver_id)
+        if message and message.sender_id == sender_id and message.receiver_id == receiver_id and message.media_duration_ms:
+            requested = data.get("durationMs", message.media_duration_ms)
+            try:
+                requested = int(requested)
+            except (TypeError, ValueError):
+                requested = message.media_duration_ms
+            options["durationMs"] = max(2000, min(requested, message.media_duration_ms, 180_000))
+            if options["durationMs"] > 30_000:
+                for dsid in desktop_sids:
+                    receiver_session = await sio.get_session(dsid)
+                    if receiver_session.get("max_video_duration_ms", 30_000) < options["durationMs"]:
+                        await sio.emit("message:result", {"messageId": message_id, "status": "failed", "reason": "desktop_update_required"}, to=sid)
+                        return {"ok": False, "reason": "desktop_update_required"}
+
+        message = db.get(MediaMessage, message_id)
         if not message or message.sender_id != sender_id or message.receiver_id != receiver_id:
             await sio.emit("message:result", {"messageId": message_id, "status": "failed", "reason": "message_not_found"}, to=sid)
             return
@@ -390,6 +411,14 @@ async def _dispatch_message(sid, data, _group_id=None):
         }
         message.delivery_status = DeliveryStatus.pending
         message.dispatched_at = utcnow() + timedelta(milliseconds=0 if _group_id else options["delayMs"])
+        # Budget the whole bounded queue, including long videos ahead of this ping.
+        queued = db.query(MediaMessage).filter(MediaMessage.receiver_id == receiver_id,
+                    MediaMessage.delivery_status == DeliveryStatus.pending,
+                    MediaMessage.dispatched_at.isnot(None), MediaMessage.id != message_id).all()
+        wait_ms = sum(max(30_000, item.media_duration_ms or 0) for item in queued)
+        message.expires_at = utcnow() + timedelta(milliseconds=wait_ms + options["durationMs"] + options["delayMs"] + 60_000)
+        if _group_id:
+            message.expires_at += timedelta(seconds=_delivery_groups[_group_id].timeout_seconds)
         db.commit()
         # An immediate desktop ack must not be overwritten after emit yields.
         if _group_id:
@@ -691,9 +720,10 @@ async def draw_end(sid, data):
     if not isinstance(session_id, str) or not session_id.strip():
         return
     session_id = session_id.strip()
-    meta = end_session(session_id)
+    meta = get_session(session_id)
     if not meta or meta.get("senderId") != sender_id:
         return
+    end_session(session_id)
 
     leftover = take_pending_stroke(sender_id)
     if leftover:

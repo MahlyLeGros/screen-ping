@@ -1,5 +1,8 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import ComposeColumnGlows from "../components/ComposeColumnGlows";
+import TikTokImport from "../components/TikTokImport";
+import { useMediaQuery } from "../hooks/useMediaQuery";
+import type { MediaImportJob } from "../lib/api";
 import { useDashboardChrome } from "../context/DashboardChromeContext";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {
@@ -329,12 +332,16 @@ export default function DashboardPage() {
   useDocumentTitle("Dashboard");
   const { setChrome } = useDashboardChrome();
   const [tab, setTab] = useState<Tab>("send");
+  const mobile = useMediaQuery("(max-width: 767px)");
   const [friends, setFriends] = useState<Friend[]>([]);
   const [history, setHistory] = useState<MessageHistoryItem[]>([]);
   const [savedPings, setSavedPings] = useState<SavedPingSummary[]>([]);
   const [receiverIds, setReceiverIds] = useState<string[]>([]);
+  const [drawReceiverIds, setDrawReceiverIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const [importJob, setImportJob] = useState<MediaImportJob | null>(null);
+  const importedVideo = importJob?.status === "ready" && Boolean(importJob.media_url);
   const [soundFile, setSoundFile] = useState<File | null>(null);
   const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
   const [editorPreviewIsVideo, setEditorPreviewIsVideo] = useState(false);
@@ -373,13 +380,13 @@ export default function DashboardPage() {
   const uploadFile = file ?? soundFile;
   const isLayerCompose = imageLayers.length > 0 && !file;
   const isSoundOnly = Boolean(soundFile && !file && imageLayers.length === 0);
-  const isVideo = file ? guessMediaKind(file) === "video" : false;
+  const isVideo = importedVideo || (file ? guessMediaKind(file) === "video" : false);
   const isImage = file ? guessMediaKind(file) === "image" : false;
-  const hasVisualMedia = isVisualMediaFile(file) || imageLayers.length > 0;
+  const hasVisualMedia = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
   const hasSound = Boolean(soundFile);
   const overlaySound = hasVisualMedia && soundFile ? soundFile : undefined;
-  const showLayoutEditor = isVisualMediaFile(file) || imageLayers.length > 0;
-  const hasSendMedia = Boolean(uploadFile) || imageLayers.length > 0;
+  const showLayoutEditor = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
+  const hasSendMedia = importedVideo || Boolean(uploadFile) || imageLayers.length > 0;
   const canSend = hasSendMedia && receiverIds.length > 0 && !loading;
 
   const desktopUrl =
@@ -504,6 +511,7 @@ export default function DashboardPage() {
   const ingestMediaFiles = useCallback(
     (files: File[]) => {
       const video = files.find((f) => guessMediaKind(f) === "video");
+      setImportJob(null);
       if (video) {
         revokeLayerUrls(imageLayersRef.current);
         setImageLayers([]);
@@ -579,6 +587,11 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (importedVideo && importJob?.media_url) {
+      setEditorPreviewUrl(importJob.media_url);
+      setEditorPreviewIsVideo(true);
+      return;
+    }
     if (!file) {
       setEditorPreviewUrl(null);
       setEditorPreviewIsVideo(false);
@@ -601,10 +614,11 @@ export default function DashboardPage() {
       cancelled = true;
       if (activeUrl) URL.revokeObjectURL(activeUrl);
     };
-  }, [file]);
+  }, [file, importedVideo, importJob?.media_url]);
 
   // Match Stay on screen to the longest of video / sound (clamped 2–30s).
   useEffect(() => {
+    if (importedVideo) return;
     const key = mediaDurationKey(file, soundFile);
     if (!key || key === "|" || key === lastDurationMediaKeyRef.current) return;
     if (skipDurationSyncRef.current) {
@@ -621,7 +635,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [file, soundFile]);
+  }, [file, soundFile, importedVideo]);
 
   const handleLayoutChange = useCallback((next: MediaLayout) => {
     setLayout(next);
@@ -746,7 +760,9 @@ export default function DashboardPage() {
 
       const sendOverlayCaption = isVideo ? overlayCaption.trim() || undefined : undefined;
 
-      if (isLayerCompose) {
+      if (importedVideo && importJob) {
+        uploads = await api.sendImport(importJob.id, receiverIds, duration, sendOverlayCaption, uploadSound);
+      } else if (isLayerCompose) {
         const orderedLayers = sortLayersByZ(imageLayers);
         const onlyGif = orderedLayers.length === 1 && isGifFile(orderedLayers[0].file);
         if (onlyGif) {
@@ -867,6 +883,7 @@ export default function DashboardPage() {
   }
 
   async function loadSavedPing(id: string) {
+    setImportJob(null);
     const saved = await getSavedPing(id);
     if (!saved) return;
 
@@ -1034,7 +1051,7 @@ export default function DashboardPage() {
           <FriendsPanel onFriendsChange={setFriends} />
         </div>
       ) : tab === "draw" ? (
-        <DrawPanel friends={friends} currentUser={currentUser} />
+        <DrawPanel friends={friends} currentUser={currentUser} selectedIds={drawReceiverIds} onSelectedIdsChange={setDrawReceiverIds} />
       ) : (
         <div id="panel-send" role="tabpanel" aria-labelledby="tab-send" className="flex min-h-0 flex-col gap-3 overflow-visible xl:flex-1">
           <form noValidate onSubmit={handleSend} className="compose-layout compose-layout-fill">
@@ -1050,7 +1067,9 @@ export default function DashboardPage() {
               />
             </section>
 
-            <aside className="compose-side compose-side-left panel order-2 flex min-h-0 flex-col gap-3 p-3 sm:p-4 xl:order-none">
+            <details open={!mobile} className="compose-side compose-side-left panel order-2 min-h-0 p-3 sm:p-4 xl:order-none">
+              <summary className="mobile-library-summary">Saved pings &amp; recent sends</summary>
+              <div className="compose-library-body flex min-h-0 flex-col gap-3">
               <section className="form-section compose-side-panel compose-side-saved flex min-h-0 flex-1 flex-col overflow-hidden">
                 <h3 className="form-section-title">Saved pings</h3>
                 {savedPings.length === 0 ? (
@@ -1127,7 +1146,8 @@ export default function DashboardPage() {
                   </ul>
                 )}
               </section>
-            </aside>
+              </div>
+            </details>
 
             <div className="compose-center-col order-1 flex min-h-0 flex-col xl:order-none">
             <section className="compose-center compose-center-fill panel flex flex-col p-1 sm:p-1.5 xl:h-full xl:min-h-0">
@@ -1194,15 +1214,24 @@ export default function DashboardPage() {
 
             <aside className="compose-side compose-side-right panel order-3 flex min-h-0 flex-col gap-3 p-3 sm:p-4 xl:order-none">
               <div className="compose-side-right-body min-h-0 flex-1 space-y-3">
-              <section className="form-section space-y-2.5">
+              <section className="form-section compose-media-section space-y-2.5">
                 <h3 className="form-section-title">Media</h3>
+                <TikTokImport job={importJob} onChange={next => {
+                  const firstReady = next?.status === "ready" && importJob?.status !== "ready";
+                  setImportJob(next);
+                  if (firstReady) {
+                    setFile(null); setImageLayers([]); setActiveLayerId(null);
+                    setDuration(Math.max(MIN_DURATION_MS, next.duration_ms || DEFAULT_DURATION_MS));
+                    setLayout(DEFAULT_LAYOUT);
+                  }
+                }} />
                 <FilePicker
                   label="File"
                   hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
                   accept="image/*,video/mp4,video/webm"
                   value={file}
-                  onChange={onMediaFileChange}
-                  onPickFiles={ingestDroppedFiles}
+                  onChange={next => { setImportJob(null); onMediaFileChange(next); }}
+                  onPickFiles={files => { setImportJob(null); ingestDroppedFiles(files); }}
                   multiple
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
                 />
@@ -1240,14 +1269,14 @@ export default function DashboardPage() {
                   />
                 )}
                 <div className="flex flex-col gap-2 pt-1">
-                  <button type="submit" disabled={!canSend} className="btn-primary w-full">
+                  <button type="submit" disabled={!canSend} className="btn-primary compose-inline-send w-full">
                     {loading
                       ? "Sending…"
                       : receiverIds.length > 1
                         ? `Send to ${receiverIds.length} friends`
                         : "Send ping"}
                   </button>
-                  {hasSendMedia && (
+                  {hasSendMedia && !importedVideo && (
                     <button
                       type="button"
                       onClick={() => setShowSaveInput((v) => !v)}
@@ -1287,8 +1316,8 @@ export default function DashboardPage() {
                 )}
               </section>
 
-              <section className="form-section space-y-3">
-                <h3 className="form-section-title">Caption &amp; timing</h3>
+              <details open={!mobile} className="form-section compose-advanced-section space-y-3">
+                <summary className="form-section-title cursor-pointer">Caption &amp; timing</summary>
                 <div>
                   <label htmlFor="caption" className="field-label">
                     Caption
@@ -1336,7 +1365,7 @@ export default function DashboardPage() {
                     label="Stay on screen"
                     value={duration}
                     min={MIN_DURATION_MS}
-                    max={MAX_DURATION_MS}
+                    max={importedVideo ? Math.max(MIN_DURATION_MS, importJob?.duration_ms || MAX_DURATION_MS) : MAX_DURATION_MS}
                     step={100}
                     inputStep={10}
                     displayAsSeconds
@@ -1366,9 +1395,14 @@ export default function DashboardPage() {
                     onChange={setFadeOutMs}
                   />
                 </div>
-              </section>
+              </details>
               </div>
             </aside>
+            <div className="compose-mobile-send">
+              <button type="submit" disabled={!canSend} className="btn-primary w-full">
+                {loading ? "Sending…" : `Send ping · ${receiverIds.length} recipient${receiverIds.length === 1 ? "" : "s"}`}
+              </button>
+            </div>
           </form>
         </div>
       )}

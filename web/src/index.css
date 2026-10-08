@@ -1776,6 +1776,37 @@
 
 /* Desktop Send — equal Saved/Recent panes; lists scroll inside (not out of the window).
    Outside @layer so this beats Tailwind utilities. */
+/* Keep desktop proportions; mobile follows the order of preparing a ping. */
+.compose-mobile-send, .mobile-library-summary { display: none; }
+.compose-library-body { height: 100%; }
+@media (min-width: 768px) { .compose-side-left { display: flex; flex-direction: column; } .compose-library-body { flex: 1; min-height: 0; } }
+@media (max-width: 767px) {
+  html, body, #root { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
+  .app-bg { height: auto; max-height: none; min-height: 100dvh; overflow: visible; }
+  .app-bg > .dashboard-main { flex: none; overflow: visible !important; z-index: 2; }
+  .app-bg:has(.compose-mobile-send) > .app-footer { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  .compose-layout { display: flex; flex-direction: column; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  .compose-side-right, .compose-side-right-body { display: contents; }
+  .compose-media-section { order: 0; }
+  .compose-center-col { order: 1; }
+  .compose-recipients-mobile { order: 2; }
+  .compose-advanced-section { order: 3; }
+  .compose-side-left { order: 4; }
+  .compose-library-body { height: auto; gap: 1rem; }
+  .mobile-library-summary { display: list-item; cursor: pointer; min-height: 44px; padding: 0.5rem; }
+  .compose-side-left:not([open]) > .compose-library-body { display: none; }
+  .compose-inline-send { display: none; }
+  .compose-mobile-send { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50; padding: 0.75rem max(1rem, env(safe-area-inset-left)) calc(0.75rem + env(safe-area-inset-bottom)); background: #09090e; border-top: 1px solid #30303d; }
+  .compose-preview-slot { width: 100%; max-height: none; aspect-ratio: 16 / 9; }
+  .field-input { font-size: 16px; }
+  button, select, input[type="range"], summary { min-height: 44px; }
+  .compose-preview-mobile-controls { gap: 0.5rem; flex-wrap: wrap; }
+  .layout-canvas [data-handle] { width: 22px !important; height: 22px !important; min-height: 22px; }
+  .draw-layout { height: auto; min-height: 0; }
+  .draw-side-right { order: 1; }
+  .draw-center-col { order: 2; }
+}
+
 @media (min-width: 1280px) {
   .compose-side-left {
     display: flex;

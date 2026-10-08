@@ -382,7 +382,7 @@ export class OverlayQueue {
       if (this.currentMessageId === messageId && this.showing) {
         void this.finish("failed");
       }
-    }, this.currentPayload?.syncGroupId ? 45_000 : OVERLAY_READY_TIMEOUT_MS);
+    }, this.currentPayload?.syncGroupId ? 650_000 : OVERLAY_READY_TIMEOUT_MS);
   }
 
   private async onOverlayReady(messageId: string) {

@@ -156,6 +156,22 @@ class MediaMessage(Base):
     delivery_status: Mapped[DeliveryStatus] = mapped_column(Enum(DeliveryStatus), default=DeliveryStatus.pending)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     dispatched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    media_duration_ms: Mapped[int | None] = mapped_column(nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     sender: Mapped["User"] = relationship("User", foreign_keys=[sender_id], back_populates="sent_messages")
     receiver: Mapped["User"] = relationship("User", foreign_keys=[receiver_id], back_populates="received_messages")
+
+
+class MediaImport(Base):
+    __tablename__ = "media_imports"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id: Mapped[str] = mapped_column(String(36), ForeignKey("users.id"), index=True)
+    url: Mapped[str] = mapped_column(String(2048))
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    storage_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(nullable=True)
+    error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

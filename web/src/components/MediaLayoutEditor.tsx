@@ -80,7 +80,7 @@ const CORNER_LOCAL: Record<Corner, { x: number; y: number }> = {
   bl: { x: -1, y: 1 },
 };
 
-const RESIZE_HIT_PX = 14;
+const RESIZE_HIT_PX = 22;
 const ROTATE_INNER_PX = 8;
 const ROTATE_OUTER_PX = 52;
 const HANDLE_SIZE_PX = 12;
@@ -1291,6 +1291,19 @@ function MediaLayoutEditor({
 
   const layoutControls = (
     <div className="flex flex-wrap items-center gap-2">
+      <details className="layout-precision-controls">
+        <summary className="pill-btn cursor-pointer">Position &amp; rotation</summary>
+        <div className="grid grid-cols-2 gap-2 p-2">
+          {(["x", "y", "width", "height", "rotation", "opacity"] as const).map(key => (
+            <label key={key} className="text-xs text-slate-400">{key}
+              <input type="number" className="field-input" aria-label={`Media ${key}`} step={key === "opacity" ? 0.05 : 1}
+                min={key === "opacity" ? 0 : key === "width" || key === "height" ? 0.1 : undefined}
+                max={key === "opacity" ? 1 : undefined} value={mediaDraft[key] ?? (key === "opacity" ? 1 : 0)}
+                onChange={event => { const value = event.target.valueAsNumber; if (Number.isFinite(value)) onChange(clampLayout({ ...mediaDraft, [key]: value })); }} />
+            </label>
+          ))}
+        </div>
+      </details>
       <div className="pill-group !gap-0.5 !p-0.5">
         <button
           type="button"

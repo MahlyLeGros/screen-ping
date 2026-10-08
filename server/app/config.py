@@ -2,6 +2,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    tiktok_import_enabled: bool = False
+    tiktok_import_queue_limit: int = 20
+    tiktok_import_timeout_seconds: int = 180
+    tiktok_import_expiry_minutes: int = 30
     secret_key: str = "dev-secret-change-in-production"
     database_url: str = "sqlite:///./screen_ping.db"
     cors_origins: str = "http://localhost:5173,http://localhost:5174"

@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import ALGORITHM
 from app.config import settings
-from app.models import DeliveryStatus, MediaMessage
+from app.models import DeliveryStatus, MediaMessage, MediaImport, utcnow
 from app.services.friends import are_friends, is_blocked
 
 
@@ -75,6 +75,9 @@ def sign_media_url(path: str | None, user_id: str, paths: list[str]) -> str | No
 
 
 def can_access_media(db: Session, user_id: str, storage_path: str) -> bool:
+    if db.query(MediaImport.id).filter(MediaImport.user_id == user_id, MediaImport.storage_path == storage_path,
+                                       MediaImport.status == "ready", MediaImport.expires_at > utcnow()).first():
+        return True
     messages = (
         db.query(MediaMessage)
         .filter(
@@ -108,6 +111,9 @@ ACTIVE_MEDIA_STATUSES = (
 
 
 def media_path_still_in_use(db: Session, storage_path: str) -> bool:
+    if db.query(MediaImport.id).filter(MediaImport.storage_path == storage_path,
+                                      MediaImport.status == "ready", MediaImport.expires_at > utcnow()).first():
+        return True
     return (
         db.query(MediaMessage.id)
         .filter(

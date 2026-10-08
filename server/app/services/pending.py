@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
 
 from app.config import settings
 from app.models import DeliveryStatus, MediaMessage, utcnow
@@ -71,7 +72,8 @@ def find_stale_dispatched_pending(db: Session) -> list[MediaMessage]:
         .filter(
             MediaMessage.delivery_status == DeliveryStatus.pending,
             MediaMessage.dispatched_at.isnot(None),
-            MediaMessage.dispatched_at < cutoff,
+            or_(and_(MediaMessage.expires_at.is_(None), MediaMessage.dispatched_at < cutoff),
+                MediaMessage.expires_at < utcnow()),
         )
         .all()
     )

@@ -41,7 +41,7 @@ export const CORNER_LOCAL: Record<Corner, { x: number; y: number }> = {
   bl: { x: -1, y: 1 },
 };
 
-export const RESIZE_HIT_PX = 14;
+export const RESIZE_HIT_PX = 22;
 export const ROTATE_INNER_PX = 8;
 export const ROTATE_OUTER_PX = 52;
 export const HANDLE_SIZE_PX = 12;
