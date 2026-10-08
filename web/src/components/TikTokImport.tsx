@@ -25,6 +25,7 @@ export default function TikTokImport({ job, onChange }: {
     try {
       if (job) await api.cancelImport(job.id).catch(() => undefined);
       onChange(await api.startTikTokImport(url.trim()));
+      setUrl("");
     } catch (err) { setError(err instanceof Error ? err.message : "Import failed"); }
     finally { setBusy(false); }
   }

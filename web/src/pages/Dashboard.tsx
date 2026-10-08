@@ -347,6 +347,7 @@ export default function DashboardPage() {
   const [file, setFile] = useState<File | null>(null);
   const [importJob, setImportJob] = useState<MediaImportJob | null>(null);
   const importedVideo = importJob?.status === "ready" && Boolean(importJob.media_url);
+  const importLocksMedia = Boolean(importJob && ["queued", "fetching", "optimizing", "ready"].includes(importJob.status));
   const [soundFile, setSoundFile] = useState<File | null>(null);
   const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
   const [editorPreviewIsVideo, setEditorPreviewIsVideo] = useState(false);
@@ -515,6 +516,11 @@ export default function DashboardPage() {
 
   const ingestMediaFiles = useCallback(
     (files: File[]) => {
+      if (!files.some(f => ["image", "video"].includes(guessMediaKind(f)))) return;
+      if (importLocksMedia) {
+        setStatus("Remove the TikTok video before adding another image or video");
+        return;
+      }
       const video = files.find((f) => guessMediaKind(f) === "video");
       setImportJob(null);
       if (video) {
@@ -539,7 +545,7 @@ export default function DashboardPage() {
         setStatus(error instanceof Error ? error.message : "Could not add image");
       });
     },
-    [addImageFiles],
+    [addImageFiles, importLocksMedia],
   );
 
   const ingestDroppedFiles = useCallback(
@@ -1229,7 +1235,7 @@ export default function DashboardPage() {
                     setLayout(DEFAULT_LAYOUT);
                   }
                 }} />
-                <FilePicker
+                {!importLocksMedia && <FilePicker
                   label="File"
                   hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
                   accept="image/*,video/mp4,video/webm"
@@ -1238,8 +1244,8 @@ export default function DashboardPage() {
                   onPickFiles={files => { setImportJob(null); ingestDroppedFiles(files); }}
                   multiple
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
-                />
-                {mobile && <>
+                />}
+                {mobile && !importLocksMedia && <>
                   <button type="button" className="btn-secondary w-full" onClick={() => cameraInputRef.current?.click()}>
                     Take a photo
                   </button>
@@ -1250,7 +1256,7 @@ export default function DashboardPage() {
                       event.target.value = "";
                     }} />
                 </>}
-                {isLayerCompose && (
+                {isLayerCompose && !importLocksMedia && (
                   <ComposeLayersPanel
                     layers={imageLayers}
                     activeLayerId={activeLayerId}
