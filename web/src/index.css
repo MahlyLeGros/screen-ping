@@ -1779,7 +1779,7 @@
 /* Keep desktop proportions; mobile follows the order of preparing a ping. */
 .compose-mobile-send, .mobile-library-summary { display: none; }
 .compose-library-body { height: 100%; }
-@media (min-width: 768px) { .compose-side-left { display: flex; flex-direction: column; } .compose-library-body { flex: 1; min-height: 0; } }
+@media (min-width: 768px) { .compose-side-left { display: flex; flex-direction: column; } .compose-library-body { flex: 1 1 0%; min-height: 0; overflow: hidden; } }
 @media (max-width: 767px) {
   html, body, #root { height: auto; min-height: 100%; overflow-x: hidden; overflow-y: auto; }
   .app-bg { height: auto; max-height: none; min-height: 100dvh; overflow: visible; }

@@ -333,6 +333,10 @@ export default function DashboardPage() {
   const { setChrome } = useDashboardChrome();
   const [tab, setTab] = useState<Tab>("send");
   const mobile = useMediaQuery("(max-width: 767px)");
+  // Native details has an internal content box that is not a flex item.
+  // Keep it on mobile only; desktop needs directly constrained flex children.
+  const LibraryPanel = mobile ? "details" : "aside";
+  const TimingPanel = mobile ? "details" : "section";
   const [friends, setFriends] = useState<Friend[]>([]);
   const [history, setHistory] = useState<MessageHistoryItem[]>([]);
   const [savedPings, setSavedPings] = useState<SavedPingSummary[]>([]);
@@ -1067,8 +1071,8 @@ export default function DashboardPage() {
               />
             </section>
 
-            <details open={!mobile} className="compose-side compose-side-left panel order-2 min-h-0 p-3 sm:p-4 xl:order-none">
-              <summary className="mobile-library-summary">Saved pings &amp; recent sends</summary>
+            <LibraryPanel className="compose-side compose-side-left panel order-2 min-h-0 p-3 sm:p-4 xl:order-none">
+              {mobile && <summary className="mobile-library-summary">Saved pings &amp; recent sends</summary>}
               <div className="compose-library-body flex min-h-0 flex-col gap-3">
               <section className="form-section compose-side-panel compose-side-saved flex min-h-0 flex-1 flex-col overflow-hidden">
                 <h3 className="form-section-title">Saved pings</h3>
@@ -1147,7 +1151,7 @@ export default function DashboardPage() {
                 )}
               </section>
               </div>
-            </details>
+            </LibraryPanel>
 
             <div className="compose-center-col order-1 flex min-h-0 flex-col xl:order-none">
             <section className="compose-center compose-center-fill panel flex flex-col p-1 sm:p-1.5 xl:h-full xl:min-h-0">
@@ -1316,8 +1320,9 @@ export default function DashboardPage() {
                 )}
               </section>
 
-              <details open={!mobile} className="form-section compose-advanced-section space-y-3">
-                <summary className="form-section-title cursor-pointer">Caption &amp; timing</summary>
+              <TimingPanel className="form-section compose-advanced-section space-y-3">
+                {mobile ? <summary className="form-section-title cursor-pointer">Caption &amp; timing</summary>
+                  : <h3 className="form-section-title">Caption &amp; timing</h3>}
                 <div>
                   <label htmlFor="caption" className="field-label">
                     Caption
@@ -1395,7 +1400,7 @@ export default function DashboardPage() {
                     onChange={setFadeOutMs}
                   />
                 </div>
-              </details>
+              </TimingPanel>
               </div>
             </aside>
             <div className="compose-mobile-send">
