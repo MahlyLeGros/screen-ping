@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type MediaImportJob } from "../lib/api";
 import VideoClipDialog from "./VideoClipDialog";
+import { useSmoothedProgress } from "../lib/useSmoothedProgress";
 
 export default function TikTokImport({ job, onChange, clipping = false }: {
   job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; clipping?: boolean;
@@ -15,6 +16,7 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
   const callback = useRef(onChange);
   callback.current = onChange;
   const active = Boolean(job && ["queued", "fetching", "optimizing", "uploading", "queued_clip", "cropping"].includes(job.status));
+  const displayedProgress = useSmoothedProgress(job?.id, job?.progress_percent);
   useEffect(() => {
     if (job?.status === "awaiting_selection" && (job.source_duration_ms ?? 0) > 30000 && openedJob.current !== job.id) {
       openedJob.current = job.id; setClipOpen(true);
@@ -51,7 +53,7 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
     </div>
-    {job?.status === "optimizing" && !error && !job.error && <div className="flex items-center gap-2"><div className="video-import-progress" role="progressbar" aria-label="Optimizing video" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress_percent ?? undefined}><span style={{ width: `${job.progress_percent ?? 0}%` }} /></div><span className="shrink-0 text-xs text-slate-400">{job.progress_percent == null ? "…" : `${job.progress_percent}%`}</span></div>}
+    {job?.status === "optimizing" && !error && !job.error && <div className="flex items-center gap-2"><div className="video-import-progress" role="progressbar" aria-label="Optimizing video" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress_percent ?? undefined}><span style={{ width: `${displayedProgress}%` }} /></div><span className="shrink-0 text-xs tabular-nums text-slate-400">{job.progress_percent == null ? "…" : `${Math.floor(displayedProgress)}%`}</span></div>}
     {(error || job?.error || (job && job.status !== "ready" && job.status !== "awaiting_selection" && job.status !== "optimizing")) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
       {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : "")}
     </p>}
