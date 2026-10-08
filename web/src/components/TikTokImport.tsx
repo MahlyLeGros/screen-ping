@@ -43,17 +43,17 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
     finally { setBusy(false); }
   }
   return <div className="space-y-2">
-    <label className="field-label" htmlFor="tiktok-url">{clipping ? "Video link" : "TikTok link"}</label>
+    <label className="field-label" htmlFor="tiktok-url">TikTok link</label>
     <div className="flex gap-2">
       <input ref={urlInput} id="tiktok-url" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off"
-        className="field-input min-w-0 flex-1" placeholder={clipping ? "TikTok, YouTube, Shorts or Instagram Reel" : "Paste a TikTok video link"} value={url}
+        className="field-input min-w-0 flex-1" placeholder="Paste a TikTok video link" value={url}
         onChange={event => setUrl(event.target.value)}
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
     </div>
-    <p role="status" aria-live="polite" className="text-xs text-slate-400">
-      {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : clipping ? "Public videos up to 20 minutes. Choose an excerpt up to 30 seconds." : "Public videos up to 3 minutes. No TikTok login needed.")}
-    </p>
+    {(error || job) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
+      {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : "")}
+    </p>}
     {job?.status === "ready" && <div>
       <span className="field-label">File</span>
       <div className="upload-zone px-3 py-3 pr-8">
