@@ -219,7 +219,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         <input type="range" min={0} max={sourceMs} step={100} value={end} aria-label="Excerpt end" onChange={e => changeEnd(Number(e.target.value))} />
         <span className="clip-boundary clip-boundary-start" aria-hidden="true" style={{ left: `${start / sourceMs * 100}%` }} />
         <span className="clip-boundary clip-boundary-end" aria-hidden="true" style={{ left: `${end / sourceMs * 100}%` }} />
-        <span className="clip-playhead" aria-hidden="true" style={{ left: `clamp(calc(${start / sourceMs * 100}% + min(12px, ${(end - start) / sourceMs * 50}%)), ${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%, calc(${end / sourceMs * 100}% - min(12px, ${(end - start) / sourceMs * 50}%)))` }} />
+        <span className="clip-playhead" aria-hidden="true" style={{ left: `clamp(calc(${start / sourceMs * 100}% + min(6.5px, ${(end - start) / sourceMs * 50}%)), ${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%, calc(${end / sourceMs * 100}% - min(6.5px, ${(end - start) / sourceMs * 50}%)))` }} />
       </div>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
     </div>
