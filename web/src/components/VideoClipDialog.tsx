@@ -35,7 +35,8 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [previewMs, setPreviewMs] = useState(job.start_ms || 0);
-  const selectionDrag = useRef<{ pointerId: number; x: number; width: number; start: number; end: number } | null>(null);
+  const selectionDrag = useRef<{ pointerId: number; x: number; width: number; start: number; end: number; moved: boolean } | null>(null);
+  const backdropPress = useRef(false);
   const video = useRef<HTMLVideoElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose); closeRef.current = onClose;
@@ -127,7 +128,13 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the excerpt"); }
     finally { setBusy(false); }
   }
-  return createPortal(<div className="clip-dialog-backdrop">
+  return createPortal(<div className="clip-dialog-backdrop"
+    onPointerDown={event => { backdropPress.current = event.button === 0 && event.target === event.currentTarget; }}
+    onPointerCancel={() => { backdropPress.current = false; }}
+    onClick={event => {
+      if (backdropPress.current && event.target === event.currentTarget && !busy) onClose();
+      backdropPress.current = false;
+    }}>
     <div ref={dialog} className="clip-dialog panel" role="dialog" aria-modal="true" aria-labelledby="clip-title">
       <div className="flex items-center justify-between gap-3">
         <h2 id="clip-title" className="font-display text-lg font-bold">Choose your excerpt</h2>
@@ -140,6 +147,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onTimeUpdate={syncPreview} />
       <div className="clip-preview-controls">
+        <button type="button" className="btn-primary clip-confirm-button" disabled={busy || previewFailed} onClick={() => void confirm()}>{busy ? "Preparing…" : "Use this excerpt"}</button>
         <div className="clip-transport-group">
         <button type="button" className="clip-transport-button" aria-label="Go to excerpt start" title="Go to excerpt start" disabled={busy || previewFailed} onClick={() => seekPreview(start)}>
           <PreviewIcon kind="start" />
@@ -163,16 +171,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
           onClick={() => setMuted(value => !value)}><PreviewIcon kind={muted ? "mute" : "sound"} /></button>
         </div>
       </div>
-      <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}
-        onContextMenu={event => {
-          const track = event.currentTarget.getBoundingClientRect();
-          if (!track.width) return;
-          const position = (event.clientX - track.left) / track.width * sourceMs;
-          if (position < start || position > end) return;
-          event.preventDefault();
-          if (busy || previewFailed) return;
-          seekPreview(position);
-        }}>
+      <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
         <div className="clip-timeline-track" aria-hidden />
         <button type="button" className={`clip-selection${dragging ? " is-dragging" : ""}`} disabled={busy}
           style={{ left: `${start / sourceMs * 100}%`, width: `${(end - start) / sourceMs * 100}%` }}
@@ -184,14 +183,25 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
             if (!width) return;
             event.preventDefault(); event.currentTarget.focus();
             event.currentTarget.setPointerCapture(event.pointerId);
-            selectionDrag.current = { pointerId: event.pointerId, x: event.clientX, width, start, end };
-            setDragging(true); video.current?.pause();
+            selectionDrag.current = { pointerId: event.pointerId, x: event.clientX, width, start, end, moved: false };
           }}
           onPointerMove={event => {
             const drag = selectionDrag.current;
             if (!drag || drag.pointerId !== event.pointerId) return;
+            if (!drag.moved && Math.abs(event.clientX - drag.x) < 5) return;
+            drag.moved = true;
+            setDragging(true);
             const shift = Math.round((event.clientX - drag.x) / drag.width * sourceMs / 100) * 100;
             moveSelection(drag.start + shift, drag.end - drag.start);
+          }}
+          onPointerUp={event => {
+            const drag = selectionDrag.current;
+            if (!drag || drag.pointerId !== event.pointerId) return;
+            if (!drag.moved && !previewFailed) {
+              const track = event.currentTarget.parentElement!.getBoundingClientRect();
+              seekPreview((event.clientX - track.left) / track.width * sourceMs);
+            }
+            selectionDrag.current = null; setDragging(false);
           }}
           onLostPointerCapture={() => { selectionDrag.current = null; setDragging(false); }}
           onKeyDown={event => {
@@ -206,15 +216,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         <span className="clip-boundary clip-boundary-end" aria-hidden="true" style={{ left: `${end / sourceMs * 100}%` }} />
         <span className="clip-playhead" aria-hidden="true" style={{ left: `clamp(calc(${start / sourceMs * 100}% + min(4px, ${(end - start) / sourceMs * 50}%)), ${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%, calc(${end / sourceMs * 100}% - min(4px, ${(end - start) / sourceMs * 50}%)))` }} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="field-label">Start (seconds)<input className="field-input" type="number" step={0.1} min={0} max={(sourceMs - minLength) / 1000} value={start / 1000} onChange={e => changeStart(e.target.valueAsNumber * 1000)} /></label>
-        <label className="field-label">End (seconds)<input className="field-input" type="number" step={0.1} min={minLength / 1000} max={sourceMs / 1000} value={end / 1000} onChange={e => changeEnd(e.target.valueAsNumber * 1000)} /></label>
-      </div>
-      <p className="text-sm text-slate-300" role="status">Selected: {timeLabel(start)} → {timeLabel(end)} · {((end - start) / 1000).toFixed(1)} seconds</p>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
-      <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-primary" disabled={busy || previewFailed} onClick={() => void confirm()}>{busy ? "Preparing…" : "Use this excerpt"}</button>
-      </div>
     </div>
   </div>, document.body);
 }
