@@ -63,9 +63,9 @@ export default function TikTokImport({ job, onChange }: {
         </button>
       </div>
     </div>}
-    {job && job.status !== "cancelled" && job.status !== "ready" && <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
+    {job && !active && job.status !== "cancelled" && job.status !== "ready" && <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
       setBusy(true);
       void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false));
-    }}>{active ? "Cancel import" : "Remove video"}</button>}
+    }}>Remove video</button>}
   </div>;
 }
