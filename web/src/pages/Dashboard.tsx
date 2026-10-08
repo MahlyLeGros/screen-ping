@@ -54,7 +54,7 @@ import {
   savePing,
   type SavedPingSummary,
 } from "../lib/savedPings";
-import { createEditorPreviewUrl, guessMediaKind, isGifFile, isVisualMediaFile } from "../lib/editorPreview";
+import { createEditorPreviewUrl, createRemoteVideoPreviewUrl, guessMediaKind, isGifFile, isVisualMediaFile } from "../lib/editorPreview";
 import { mediaDurationKey, stayDurationFromMedia } from "../lib/mediaDuration";
 import { rasterizeCaptionText } from "../lib/rasterizeCaption";
 import {
@@ -598,12 +598,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    if (importedVideo && importJob?.media_url) {
-      setEditorPreviewUrl(importJob.media_url);
-      setEditorPreviewIsVideo(true);
-      return;
-    }
-    if (!file) {
+    if (!file && !importedVideo) {
       setEditorPreviewUrl(null);
       setEditorPreviewIsVideo(false);
       return;
@@ -611,7 +606,12 @@ export default function DashboardPage() {
 
     let activeUrl: string | null = null;
     let cancelled = false;
-    void createEditorPreviewUrl(file).then((preview) => {
+    setEditorPreviewUrl(null);
+    setEditorPreviewIsVideo(false);
+    const previewTask = importedVideo && importJob?.media_url
+      ? createRemoteVideoPreviewUrl(importJob.media_url)
+      : createEditorPreviewUrl(file!);
+    void previewTask.then((preview) => {
       if (cancelled) {
         URL.revokeObjectURL(preview.url);
         return;
@@ -619,6 +619,8 @@ export default function DashboardPage() {
       activeUrl = preview.url;
       setEditorPreviewUrl(preview.url);
       setEditorPreviewIsVideo(preview.isVideo);
+    }).catch(() => {
+      if (!cancelled) setStatus("Could not load the video preview; remove the video and retry the import");
     });
 
     return () => {
