@@ -62,7 +62,7 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
       <div className="upload-zone px-2.5 py-2 pr-[6.5rem]">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 bg-transparent text-left"
           aria-label="Replace selected media" disabled={busy} onClick={onReplace}>
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-sm text-slate-400">{job.status === "awaiting_selection" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 3.8H7.2a4.9 4.9 0 0 0-4.9 4.9v9a4.9 4.9 0 0 0 4.9 4.9h9a4.9 4.9 0 0 0 4.9-4.9v-4" /><path d="m8.2 16.6.6-4.3L18.2 3a2.6 2.6 0 0 1 3.7 3.7l-9.3 9.4-4.4.5Z" /><path d="m16.5 4.7 3.7 3.7" /></svg> : "✓"}</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-sm text-slate-400">{job.status === "awaiting_selection" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg> : "✓"}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-white" title={job.status === "awaiting_selection" ? undefined : job.title || videoName}>{job.status === "awaiting_selection" ? "Trim video" : job.title || videoName}</span>
             <span className="block text-xs text-slate-500">Click to replace</span>
