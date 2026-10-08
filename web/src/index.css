@@ -1832,7 +1832,7 @@
 /* Keep desktop proportions; mobile follows the order of preparing a ping. */
 .compose-mobile-send, .mobile-library-summary { display: none; }
 .video-import-progress { height: 6px; width: 100%; overflow: hidden; border-radius: 999px; background: #292936; }
-.video-import-progress > span { display: block; height: 100%; border-radius: inherit; background: #a78bfa; transition: width .25s; }
+.video-import-progress > span { display: block; height: 100%; border-radius: inherit; background: #a78bfa; transition: width 1.2s linear; }
 @media (prefers-reduced-motion: reduce) { .video-import-progress > span { transition: none; } }
 .widget-anchor { display: none; }
 .widget-host { display: contents; }
