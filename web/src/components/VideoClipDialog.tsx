@@ -145,7 +145,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onTimeUpdate={syncPreview} />
       <div className="clip-preview-controls">
-        <button type="button" className="btn-primary clip-confirm-button" disabled={busy || previewFailed} onClick={() => void confirm()}>{busy ? "Preparing…" : "Use this excerpt"}</button>
+        <button type="button" className="btn-primary clip-confirm-button" disabled={busy || previewFailed} onClick={() => void confirm()}>{busy ? "Preparing…" : "Upload"}</button>
         <div className="clip-transport-group">
         <button type="button" className="clip-transport-button" aria-label="Go to excerpt start" title="Go to excerpt start" disabled={busy || previewFailed} onClick={() => seekPreview(start)}>
           <PreviewIcon kind="start" />
