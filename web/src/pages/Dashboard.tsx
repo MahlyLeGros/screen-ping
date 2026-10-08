@@ -1277,6 +1277,7 @@ export default function DashboardPage() {
                   onChange={onMediaFileChange}
                   onPickFiles={ingestDroppedFiles}
                   multiple
+                  compact
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
                 />}
                 {mobile && !importLocksMedia && <>
