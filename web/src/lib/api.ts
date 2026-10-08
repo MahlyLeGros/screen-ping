@@ -308,6 +308,7 @@ export interface MediaImportJob {
   preview_url?: string | null;
   start_ms?: number | null;
   end_ms?: number | null;
+  volume?: number;
 }
 
 export interface LayerUploadInput {
@@ -388,7 +389,7 @@ export const api = {
   videoCapabilities: () => request<{ video_clip: boolean; youtube_import: boolean; instagram_import: boolean }>("/api/media/capabilities"),
   startVideoImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url, clip: true }) }),
   uploadVideoSource: (file: File) => { const body = new FormData(); body.append("file", file); return request<MediaImportJob>("/api/media/imports/upload", { method: "POST", body }); },
-  selectVideoClip: (id: string, start_ms: number, end_ms: number) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}/clip`, { method: "POST", body: JSON.stringify({ start_ms, end_ms }) }),
+  selectVideoClip: (id: string, start_ms: number, end_ms: number, volume = 1) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}/clip`, { method: "POST", body: JSON.stringify({ start_ms, end_ms, volume }) }),
   importStatus: (id: string) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}`),
   cancelImport: (id: string) => request<{ ok: boolean }>(`/api/media/imports/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendImport: async (id: string, receiverIds: string[], durationMs: number, caption?: string, sound?: File) => {

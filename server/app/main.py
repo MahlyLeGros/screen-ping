@@ -47,7 +47,7 @@ def _migrate_sqlite_columns() -> None:
         with engine.begin() as conn:
             for name, kind in {"platform": "VARCHAR(20)", "title": "VARCHAR(300)", "source_path": "VARCHAR(512)",
                                "source_duration_ms": "INTEGER", "start_ms": "INTEGER", "end_ms": "INTEGER",
-                               "reserved_bytes": "INTEGER"}.items():
+                               "reserved_bytes": "INTEGER", "volume": "FLOAT"}.items():
                 if name not in columns:
                     conn.execute(text(f"ALTER TABLE media_imports ADD COLUMN {name} {kind}"))
     if "media_messages" in insp.get_table_names():

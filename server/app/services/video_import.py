@@ -71,14 +71,16 @@ def run_ffmpeg(arguments, timeout):
                    check=True, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def clip_video(source, final, start_ms, end_ms):
+def clip_video(source, final, start_ms, end_ms, volume=1.0):
+    if not 0 <= volume <= 1:
+        raise ValueError("Video volume must be between 0 and 1")
     duration = source_duration(probe(source))
     length = validate_clip(duration, start_ms, end_ms)
     run_ffmpeg(["-ss", str(start_ms / 1000), "-i", str(source), "-t", str(length / 1000),
                 "-map", "0:v:0", "-map", "0:a:0?",
                 "-vf", "scale=w='min(1280,iw)':h='min(1280,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-maxrate", "1200k", "-bufsize", "2400k",
-                "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k", "-threads", "2", "-movflags", "+faststart", "-y", str(final)], 170)
+                "-pix_fmt", "yuv420p", "-af", f"volume={volume}", "-c:a", "aac", "-b:a", "96k", "-threads", "2", "-movflags", "+faststart", "-y", str(final)], 170)
     result = source_duration(probe(final))
     if final.stat().st_size > FINAL_BYTES or abs(result - length) > 200:
         raise ValueError("Could not prepare an accurate clip within the size limit")
@@ -175,7 +177,7 @@ if __name__ == "__main__":
         mode, source_arg, directory_arg = sys.argv[1:4]
         directory = Path(directory_arg)
         if mode == "clip":
-            result = clip_video(Path(source_arg), directory / "ready.mp4", int(sys.argv[4]), int(sys.argv[5]))
+            result = clip_video(Path(source_arg), directory / "ready.mp4", int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]) if len(sys.argv) > 6 else 1.0)
         else:
             source, title = (Path(source_arg), "Uploaded video") if mode == "local" else fetch_source(source_arg, directory)
             print(json.dumps({"phase": "optimizing"}), flush=True)

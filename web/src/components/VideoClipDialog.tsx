@@ -22,7 +22,7 @@ function PreviewIcon({ kind }: { kind: "start" | "back" | "play" | "pause" | "fo
 }
 
 export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
-  job: MediaImportJob; onClose: () => void; onChange: (job: MediaImportJob) => void; onDraft: (start: number, end: number) => void;
+  job: MediaImportJob; onClose: () => void; onChange: (job: MediaImportJob) => void; onDraft: (start: number, end: number, volume: number) => void;
 }) {
   const sourceMs = job.source_duration_ms || 0;
   const minLength = Math.min(2000, sourceMs);
@@ -33,7 +33,8 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   const [previewFailed, setPreviewFailed] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(job.volume ?? 1);
+  const [volumeOpen, setVolumeOpen] = useState(false);
   const [previewMs, setPreviewMs] = useState(job.start_ms || 0);
   const selectionDrag = useRef<{ pointerId: number; x: number; width: number; start: number; end: number; moved: boolean } | null>(null);
   const backdropPress = useRef(false);
@@ -42,7 +43,8 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const busyRef = useRef(busy); busyRef.current = busy;
   const draftRef = useRef(onDraft); draftRef.current = onDraft;
-  useEffect(() => { draftRef.current(start, end); }, [start, end]);
+  useEffect(() => { draftRef.current(start, end, volume); }, [start, end, volume]);
+  useEffect(() => { if (video.current) video.current.volume = volume; }, [volume]);
   useEffect(() => {
     if (!playing) return;
     let frame: number;
@@ -124,7 +126,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   }
   async function confirm() {
     setBusy(true); setError("");
-    try { onChange(await api.selectVideoClip(job.id, start, end)); onClose(); }
+    try { onChange(await api.selectVideoClip(job.id, start, end, volume)); onClose(); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the excerpt"); }
     finally { setBusy(false); }
   }
@@ -135,13 +137,9 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
       if (backdropPress.current && event.target === event.currentTarget && !busy) onClose();
       backdropPress.current = false;
     }}>
-    <div ref={dialog} className="clip-dialog panel" role="dialog" aria-modal="true" aria-labelledby="clip-title">
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="clip-title" className="font-display text-lg font-bold">Choose your excerpt</h2>
-        <button type="button" className="btn-ghost" disabled={busy} onClick={onClose} aria-label="Close excerpt selection">×</button>
-      </div>
-      <p className="text-sm text-slate-400">Choose up to 30 seconds. Your source is {timeLabel(sourceMs)}.</p>
-      <video ref={video} src={job.preview_url || undefined} muted={muted} playsInline preload="metadata" className="clip-source-video"
+    <div ref={dialog} className="clip-dialog panel" role="dialog" aria-modal="true" aria-label="Choose your excerpt">
+      <button type="button" className="clip-close-button" disabled={busy} onClick={onClose} aria-label="Close excerpt selection">×</button>
+      <video ref={video} src={job.preview_url || undefined} muted={volume === 0} playsInline preload="metadata" className="clip-source-video"
         onLoadedMetadata={() => { setPreviewFailed(false); if (video.current) video.current.currentTime = start / 1000; }}
         onError={() => { setPreviewFailed(true); setError("The preview could not load. Close this menu and import the video again."); }}
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
@@ -167,8 +165,15 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         </div>
         <div className="clip-preview-meta">
         <span className="clip-preview-time text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
-        <button type="button" className="clip-transport-button" aria-label={muted ? "Enable preview sound" : "Mute preview sound"} title={muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={muted}
-          onClick={() => setMuted(value => !value)}><PreviewIcon kind={muted ? "mute" : "sound"} /></button>
+        <div className="clip-volume-control">
+          <button type="button" className="clip-transport-button" aria-label="Video volume" title={`Video volume: ${Math.round(volume * 100)}%`} aria-expanded={volumeOpen} disabled={busy}
+            onClick={() => setVolumeOpen(value => !value)}><PreviewIcon kind={volume === 0 ? "mute" : "sound"} /></button>
+          {volumeOpen && <div className="clip-volume-popover">
+            <input type="range" min="0" max="100" step="1" aria-label="Sent video volume" value={Math.round(volume * 100)} disabled={busy}
+              onChange={event => setVolume(Number(event.target.value) / 100)} />
+            <output className="text-xs tabular-nums">{Math.round(volume * 100)}%</output>
+          </div>}
+        </div>
         </div>
       </div>
       <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>

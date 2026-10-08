@@ -181,4 +181,5 @@ class MediaImport(Base):
     source_duration_ms: Mapped[int | None] = mapped_column(nullable=True)
     start_ms: Mapped[int | None] = mapped_column(nullable=True)
     end_ms: Mapped[int | None] = mapped_column(nullable=True)
+    volume: Mapped[float | None] = mapped_column(nullable=True)
     reserved_bytes: Mapped[int | None] = mapped_column(nullable=True)

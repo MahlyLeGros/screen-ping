@@ -76,8 +76,8 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
       {job.status === "ready" ? "Modify excerpt" : "Choose excerpt"}
     </button>}
     {clipOpen && job?.preview_url && <VideoClipDialog key={job.id} job={job} onClose={() => setClipOpen(false)}
-      onChange={onChange} onDraft={(start_ms, end_ms) => onChange({ ...job, start_ms, end_ms,
-        status: job.status === "ready" && (start_ms !== job.start_ms || end_ms !== job.end_ms) ? "awaiting_selection" : job.status })} />}
+      onChange={onChange} onDraft={(start_ms, end_ms, volume) => onChange({ ...job, start_ms, end_ms, volume,
+        status: job.status === "ready" && (start_ms !== job.start_ms || end_ms !== job.end_ms || volume !== (job.volume ?? 1)) ? "awaiting_selection" : job.status })} />}
     {job && !active && job.status !== "cancelled" && job.status !== "ready" && <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
       setBusy(true);
       void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false));

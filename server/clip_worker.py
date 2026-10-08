@@ -45,7 +45,7 @@ def process_job(job_id):
         if not source:
             job.status = "failed"; job.error = "Source file is missing; import it again"; db.commit(); return
         args = [str(source)]
-        clip_args = [str(job.start_ms), str(job.end_ms)] if cropping else []
+        clip_args = [str(job.start_ms), str(job.end_ms), str(job.volume if job.volume is not None else 1.0)] if cropping else []
     with tempfile.TemporaryDirectory(prefix="screenping-clip-") as temporary:
         output = Path(temporary) / "result.log"
         env = {key: value for key, value in os.environ.items() if key in ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG")}

@@ -31,6 +31,7 @@ class ImportRequest(BaseModel):
 class ClipRequest(BaseModel):
     start_ms: int = Field(strict=True)
     end_ms: int = Field(strict=True)
+    volume: float = Field(default=1.0, ge=0, le=1, allow_inf_nan=False)
 
 
 def platform_enabled(platform):
@@ -76,7 +77,7 @@ def job_response(job: MediaImport):
     return {"id": job.id, "status": job.status, "error": job.error, "duration_ms": job.duration_ms,
             "media_url": sign_media_url(job.storage_path, job.user_id, [job.storage_path]) if job.status == "ready" else None,
             "platform": job.platform or "tiktok", "title": job.title,
-            "source_duration_ms": job.source_duration_ms, "start_ms": job.start_ms, "end_ms": job.end_ms,
+            "source_duration_ms": job.source_duration_ms, "start_ms": job.start_ms, "end_ms": job.end_ms, "volume": job.volume if job.volume is not None else 1.0,
             "preview_url": sign_media_url(job.source_path, job.user_id, [job.source_path]) if job.source_duration_ms and job.source_path else None}
 
 
@@ -173,6 +174,7 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
         if active.count() >= 20 or active.filter(MediaImport.user_id == user.id).count() >= 2:
             raise HTTPException(429, "Processing queue full; try again shortly")
         job.start_ms = body.start_ms; job.end_ms = body.end_ms
+        job.volume = body.volume
         job.status = "queued_clip"; job.error = None
         job.expires_at = utcnow() + timedelta(minutes=30)
         db.commit()

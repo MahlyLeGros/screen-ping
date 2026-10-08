@@ -73,6 +73,34 @@ def prepared_job(db):
     return job
 
 
+@pytest.mark.parametrize("volume", [-0.1, 1.1, float("nan"), float("inf")])
+def test_reject_invalid_clip_volume(volume):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        imports.ClipRequest(start_ms=0, end_ms=2000, volume=volume)
+
+
+def test_clip_volume_persisted(db, monkeypatch):
+    job = prepared_job(db)
+    monkeypatch.setattr(imports.settings, "video_clip_enabled", True)
+    monkeypatch.setattr(imports, "check_upload_rate_limit", lambda _: True)
+    result = imports.select_clip(job.id, imports.ClipRequest(start_ms=1000, end_ms=4000, volume=0.35), db.get(User, "owner"), db)
+    assert result["volume"] == job.volume == 0.35
+
+
+@pytest.mark.parametrize("volume", [0, 0.35, 1])
+def test_clip_volume_applied_to_encoder(tmp_path, monkeypatch, volume):
+    from app.services import video_import
+    final = tmp_path / "clip.mp4"
+    final.write_bytes(b"fixture")
+    metadata = iter([{"format": {"duration": 10}}, {"format": {"duration": 3}}])
+    monkeypatch.setattr(video_import, "probe", lambda _: next(metadata))
+    calls = []
+    monkeypatch.setattr(video_import, "run_ffmpeg", lambda args, timeout: calls.append(args))
+    assert video_import.clip_video(tmp_path / "source.mp4", final, 1000, 4000, volume)["duration_ms"] == 3000
+    assert calls[0][calls[0].index("-af") + 1] == f"volume={volume}"
+
+
 def test_source_access_and_owner_only_clip(db, monkeypatch):
     job = prepared_job(db)
     assert can_access_media(db, "owner", job.source_path)
