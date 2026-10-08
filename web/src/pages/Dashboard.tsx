@@ -337,6 +337,7 @@ export default function DashboardPage() {
   const mobile = useMediaQuery("(max-width: 767px)");
   const widgetLayoutEnabled = useMediaQuery("(min-width: 1280px)");
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const replacementInputRef = useRef<HTMLInputElement>(null);
   // Native details has an internal content box that is not a flex item.
   // Keep it on mobile only; desktop needs directly constrained flex children.
   const LibraryPanel = mobile ? "details" : "aside";
@@ -522,11 +523,15 @@ export default function DashboardPage() {
   }, []);
 
   const ingestMediaFiles = useCallback(
-    (files: File[]) => {
+    async (files: File[]) => {
       if (!files.some(f => ["image", "video"].includes(guessMediaKind(f)))) return;
-      if (importLocksMedia) {
-        setStatus("Remove the current video before adding another image or video");
+      if (preparingVideo) {
+        setStatus("Please wait for the current upload to finish");
         return;
+      }
+      if (importJob && !["failed", "cancelled"].includes(importJob.status)) {
+        try { await api.cancelImport(importJob.id); }
+        catch (error) { setStatus(error instanceof Error ? error.message : "Could not replace the video"); return; }
       }
       const video = files.find((f) => guessMediaKind(f) === "video");
       setImportJob(null);
@@ -557,12 +562,12 @@ export default function DashboardPage() {
       setFile(null);
       setOverlayCaption("");
       setCaptionLayout(DEFAULT_CAPTION_LAYOUT);
-      const replace = imageLayersRef.current.length === 0;
+      const replace = Boolean(importJob) || imageLayersRef.current.length === 0;
       void addImageFiles(images, replace).catch((error) => {
         setStatus(error instanceof Error ? error.message : "Could not add image");
       });
     },
-    [addImageFiles, importLocksMedia, clippingEnabled],
+    [addImageFiles, preparingVideo, importJob, clippingEnabled],
   );
 
   const ingestDroppedFiles = useCallback(
@@ -1266,7 +1271,12 @@ export default function DashboardPage() {
               <MovableWidget id="media">
               <section className="form-section compose-media-section space-y-2.5">
                 <h3 className="form-section-title"><WidgetGrip id="media" />Media</h3>
-                <TikTokImport job={importJob} clipping={clippingEnabled} onChange={next => {
+                <input ref={replacementInputRef} type="file" accept="image/*,video/mp4,video/webm" multiple className="sr-only" aria-label="Replace media" onChange={event => {
+                  const files = Array.from(event.target.files || []);
+                  event.target.value = "";
+                  if (files.length) ingestDroppedFiles(files);
+                }} />
+                <TikTokImport job={importJob} clipping={clippingEnabled} onReplace={() => replacementInputRef.current?.click()} onChange={next => {
                   const firstReady = next?.status === "ready" && importJob?.status !== "ready";
                   if (next && next.id !== importJob?.id) setLayout(DEFAULT_LAYOUT);
                   setImportJob(next);
