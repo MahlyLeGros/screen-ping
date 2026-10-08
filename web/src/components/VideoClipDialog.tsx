@@ -191,9 +191,11 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
             event.preventDefault();
             moveSelection(event.key === "Home" ? 0 : event.key === "End" ? sourceMs - (end - start) : start + (event.key === "ArrowRight" ? step : -step));
           }} />
-        <input type="range" min={0} max={sourceMs - minLength} step={100} value={start} aria-label="Excerpt start" onChange={e => changeStart(Number(e.target.value))} />
-        <input type="range" min={minLength} max={sourceMs} step={100} value={end} aria-label="Excerpt end" onChange={e => changeEnd(Number(e.target.value))} />
-        <span className="clip-playhead" aria-hidden="true" style={{ left: `${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%` }} />
+        <input type="range" min={0} max={sourceMs} step={100} value={start} aria-label="Excerpt start" onChange={e => changeStart(Number(e.target.value))} />
+        <input type="range" min={0} max={sourceMs} step={100} value={end} aria-label="Excerpt end" onChange={e => changeEnd(Number(e.target.value))} />
+        <span className="clip-boundary clip-boundary-start" aria-hidden="true" style={{ left: `${start / sourceMs * 100}%` }} />
+        <span className="clip-boundary clip-boundary-end" aria-hidden="true" style={{ left: `${end / sourceMs * 100}%` }} />
+        <span className="clip-playhead" aria-hidden="true" style={{ left: `clamp(calc(${start / sourceMs * 100}% + min(4px, ${(end - start) / sourceMs * 50}%)), ${Math.min(end, Math.max(start, previewMs)) / sourceMs * 100}%, calc(${end / sourceMs * 100}% - min(4px, ${(end - start) / sourceMs * 50}%)))` }} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <label className="field-label">Start (seconds)<input className="field-input" type="number" step={0.1} min={0} max={(sourceMs - minLength) / 1000} value={start / 1000} onChange={e => changeStart(e.target.valueAsNumber * 1000)} /></label>
