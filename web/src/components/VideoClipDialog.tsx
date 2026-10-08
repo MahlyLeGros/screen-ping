@@ -163,7 +163,16 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
           onClick={() => setMuted(value => !value)}><PreviewIcon kind={muted ? "mute" : "sound"} /></button>
         </div>
       </div>
-      <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
+      <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}
+        onContextMenu={event => {
+          const track = event.currentTarget.getBoundingClientRect();
+          if (!track.width) return;
+          const position = (event.clientX - track.left) / track.width * sourceMs;
+          if (position < start || position > end) return;
+          event.preventDefault();
+          if (busy || previewFailed) return;
+          seekPreview(position);
+        }}>
         <div className="clip-timeline-track" aria-hidden />
         <button type="button" className={`clip-selection${dragging ? " is-dragging" : ""}`} disabled={busy}
           style={{ left: `${start / sourceMs * 100}%`, width: `${(end - start) / sourceMs * 100}%` }}
