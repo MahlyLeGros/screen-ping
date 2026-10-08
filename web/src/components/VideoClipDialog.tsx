@@ -140,6 +140,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onTimeUpdate={syncPreview} />
       <div className="clip-preview-controls">
+        <div className="clip-transport-group">
         <button type="button" className="clip-transport-button" aria-label="Go to excerpt start" title="Go to excerpt start" disabled={busy || previewFailed} onClick={() => seekPreview(start)}>
           <PreviewIcon kind="start" />
         </button>
@@ -155,9 +156,12 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         <button type="button" className="clip-transport-button" aria-label="Go to excerpt end" title="Go to excerpt end" disabled={busy || previewFailed} onClick={() => seekPreview(end)}>
           <PreviewIcon kind="end" />
         </button>
+        </div>
+        <div className="clip-preview-meta">
         <span className="clip-preview-time text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
         <button type="button" className="clip-transport-button" aria-label={muted ? "Enable preview sound" : "Mute preview sound"} title={muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={muted}
           onClick={() => setMuted(value => !value)}><PreviewIcon kind={muted ? "mute" : "sound"} /></button>
+        </div>
       </div>
       <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
         <div className="clip-timeline-track" aria-hidden />
