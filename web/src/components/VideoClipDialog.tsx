@@ -14,6 +14,8 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [previewFailed, setPreviewFailed] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const selectionDrag = useRef<{ pointerId: number; x: number; width: number; start: number; end: number } | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const playingExcerpt = useRef(false);
@@ -55,6 +57,12 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     setEnd(next); setStart(Math.max(0, Math.min(next - minLength, Math.max(start, next - 30000))));
     playingExcerpt.current = false; video.current?.pause();
   }
+  function moveSelection(value: number, length = end - start) {
+    const next = Math.max(0, Math.min(Math.round(value), sourceMs - length));
+    setStart(next); setEnd(next + length);
+    playingExcerpt.current = false; video.current?.pause();
+    if (video.current) video.current.currentTime = next / 1000;
+  }
   async function confirm() {
     setBusy(true); setError("");
     try { onChange(await api.selectVideoClip(job.id, start, end)); onClose(); }
@@ -74,6 +82,32 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         onTimeUpdate={() => { const player = video.current; if (player && playingExcerpt.current && player.currentTime * 1000 >= end) { player.pause(); playingExcerpt.current = false; } }} />
       <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
         <div className="clip-timeline-track" aria-hidden />
+        <button type="button" className={`clip-selection${dragging ? " is-dragging" : ""}`} disabled={busy}
+          style={{ left: `${start / sourceMs * 100}%`, width: `${(end - start) / sourceMs * 100}%` }}
+          role="slider" aria-label="Move excerpt" aria-valuemin={0} aria-valuemax={sourceMs - (end - start)}
+          aria-valuenow={start} aria-valuetext={`${timeLabel(start)} to ${timeLabel(end)}`} aria-orientation="horizontal"
+          onPointerDown={event => {
+            if (!event.isPrimary || event.button !== 0) return;
+            const width = event.currentTarget.parentElement!.getBoundingClientRect().width;
+            if (!width) return;
+            event.preventDefault(); event.currentTarget.focus();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            selectionDrag.current = { pointerId: event.pointerId, x: event.clientX, width, start, end };
+            setDragging(true); playingExcerpt.current = false; video.current?.pause();
+          }}
+          onPointerMove={event => {
+            const drag = selectionDrag.current;
+            if (!drag || drag.pointerId !== event.pointerId) return;
+            const shift = Math.round((event.clientX - drag.x) / drag.width * sourceMs / 100) * 100;
+            moveSelection(drag.start + shift, drag.end - drag.start);
+          }}
+          onLostPointerCapture={() => { selectionDrag.current = null; setDragging(false); }}
+          onKeyDown={event => {
+            const step = event.shiftKey ? 1000 : 100;
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault();
+            moveSelection(event.key === "Home" ? 0 : event.key === "End" ? sourceMs - (end - start) : start + (event.key === "ArrowRight" ? step : -step));
+          }} />
         <input type="range" min={0} max={sourceMs - minLength} step={100} value={start} aria-label="Excerpt start" onChange={e => changeStart(Number(e.target.value))} />
         <input type="range" min={minLength} max={sourceMs} step={100} value={end} aria-label="Excerpt end" onChange={e => changeEnd(Number(e.target.value))} />
       </div>
