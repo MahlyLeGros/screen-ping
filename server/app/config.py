@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     enable_api_docs: bool = False
     auth_cookie_secure: bool = False
     redis_url: str = ""
+    youtube_import_enabled: bool = False
+    instagram_import_enabled: bool = False
+    video_clip_enabled: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

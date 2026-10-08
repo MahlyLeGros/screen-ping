@@ -75,6 +75,10 @@ def sign_media_url(path: str | None, user_id: str, paths: list[str]) -> str | No
 
 
 def can_access_media(db: Session, user_id: str, storage_path: str) -> bool:
+    if db.query(MediaImport.id).filter(MediaImport.user_id == user_id, MediaImport.source_path == storage_path,
+                                      MediaImport.status.notin_(("cancelled", "failed")), MediaImport.expires_at > utcnow(),
+                                      MediaImport.source_duration_ms.isnot(None)).first():
+        return True
     if db.query(MediaImport.id).filter(MediaImport.user_id == user_id, MediaImport.storage_path == storage_path,
                                        MediaImport.status == "ready", MediaImport.expires_at > utcnow()).first():
         return True
@@ -111,6 +115,9 @@ ACTIVE_MEDIA_STATUSES = (
 
 
 def media_path_still_in_use(db: Session, storage_path: str) -> bool:
+    if db.query(MediaImport.id).filter(MediaImport.source_path == storage_path,
+                                      MediaImport.status.notin_(("cancelled", "failed")), MediaImport.expires_at > utcnow()).first():
+        return True
     if db.query(MediaImport.id).filter(MediaImport.storage_path == storage_path,
                                       MediaImport.status == "ready", MediaImport.expires_at > utcnow()).first():
         return True

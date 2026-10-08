@@ -87,6 +87,37 @@ Auto-update feed: `https://screenping.xyz/desktop/updates/`
 2. `deploy\publish-desktop.bat`
 3. `deploy\deploy.bat` if server/web changed too
 
+## Video links and excerpts
+
+The dashboard supports anonymous public TikTok, YouTube/Shorts and Instagram
+Reel extraction when the corresponding platform is enabled. Authentication,
+private content, playlists, live streams and photo posts are not supported.
+Some public links may still be blocked by the platform; use a video file instead.
+
+New sources are limited to 20 minutes. Sources longer than 30 seconds require
+an explicit 2–30 second excerpt, including uploaded and saved video files.
+The private source remains available for 30 minutes of inactivity so an excerpt
+can be changed without downloading it again. Only the finalized excerpt is sent.
+
+Docker Compose starts one `import-worker` with FFmpeg, pinned Node.js and pinned
+yt-dlp/EJS dependencies. The worker uses local files for FFmpeg and restricts
+all extraction/download connections to public addresses on platform domains.
+Limits: 256 MiB remote source, 50 MiB local source/result, 2 GiB reserved temporary
+storage, 20 queued operations, 10 minutes preparation and 3 minutes clipping.
+
+Deployment flags in the root `.env` (all default to false):
+
+- `VIDEO_CLIP_ENABLED`: the new excerpt/upload workflow.
+- `TIKTOK_IMPORT_ENABLED`, `YOUTUBE_IMPORT_ENABLED`, `INSTAGRAM_IMPORT_ENABLED`:
+  independently control extraction from each platform.
+
+Keep new platform flags off until a real public import and synchronized delivery
+have been verified from your deployment. Existing TikTok imports retain their
+legacy behavior until expiration. No desktop update is required for new clips
+limited to 30 seconds. For manual local development, start `python clip_worker.py`
+from `server` in addition to the API (FFmpeg/FFprobe and Node.js must be installed).
+Offline codec/timing checks: `python check_video_clips.py` in the worker image.
+
 ## Extra scripts
 
 | Script | Purpose |

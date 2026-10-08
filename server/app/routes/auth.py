@@ -468,7 +468,8 @@ def delete_account(
         (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)
     ).all()
     media_paths = {path for message in messages for path in media_paths_for_message(message)}
-    media_paths.update(job.storage_path for job in db.query(MediaImport).filter(MediaImport.user_id == current_user.id).all() if job.storage_path)
+    media_paths.update(path for job in db.query(MediaImport).filter(MediaImport.user_id == current_user.id).all()
+                       for path in (job.storage_path, job.source_path) if path)
     db.query(MediaImport).filter(MediaImport.user_id == current_user.id).delete(synchronize_session=False)
     db.query(MediaMessage).filter(
         (MediaMessage.sender_id == current_user.id) | (MediaMessage.receiver_id == current_user.id)

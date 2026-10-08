@@ -37,6 +37,9 @@ services:
       ENABLE_API_DOCS: "false"
       REDIS_URL: redis://redis:6379/0
       TIKTOK_IMPORT_ENABLED: ${TIKTOK_IMPORT_ENABLED:-false}
+      YOUTUBE_IMPORT_ENABLED: ${YOUTUBE_IMPORT_ENABLED:-false}
+      INSTAGRAM_IMPORT_ENABLED: ${INSTAGRAM_IMPORT_ENABLED:-false}
+      VIDEO_CLIP_ENABLED: ${VIDEO_CLIP_ENABLED:-false}
     volumes:
       - ./server:/app
       # Host folder survives container recreate / `docker compose down -v`.
@@ -49,11 +52,14 @@ services:
 
   import-worker:
     build: ./server
-    command: ["python", "import_worker.py"]
+    command: ["python", "clip_worker.py"]
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://screenping:${POSTGRES_PASSWORD}@db:5432/screenping
       TIKTOK_IMPORT_ENABLED: ${TIKTOK_IMPORT_ENABLED:-false}
+      YOUTUBE_IMPORT_ENABLED: ${YOUTUBE_IMPORT_ENABLED:-false}
+      INSTAGRAM_IMPORT_ENABLED: ${INSTAGRAM_IMPORT_ENABLED:-false}
+      VIDEO_CLIP_ENABLED: ${VIDEO_CLIP_ENABLED:-false}
     volumes:
       - ./data/uploads:/app/uploads
     mem_limit: 768m

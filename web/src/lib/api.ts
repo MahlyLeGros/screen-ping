@@ -298,10 +298,16 @@ export interface UploadResult {
 
 export interface MediaImportJob {
   id: string;
-  status: "queued" | "fetching" | "optimizing" | "ready" | "failed" | "cancelled";
+  status: "queued" | "fetching" | "optimizing" | "ready" | "failed" | "cancelled" | "uploading" | "awaiting_selection" | "queued_clip" | "cropping";
   duration_ms: number | null;
   media_url: string | null;
   error: string | null;
+  platform?: string;
+  title?: string | null;
+  source_duration_ms?: number | null;
+  preview_url?: string | null;
+  start_ms?: number | null;
+  end_ms?: number | null;
 }
 
 export interface LayerUploadInput {
@@ -379,6 +385,10 @@ async function parseUploadError(res: Response): Promise<never> {
 
 export const api = {
   startTikTokImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url }) }),
+  videoCapabilities: () => request<{ video_clip: boolean; youtube_import: boolean; instagram_import: boolean }>("/api/media/capabilities"),
+  startVideoImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url, clip: true }) }),
+  uploadVideoSource: (file: File) => { const body = new FormData(); body.append("file", file); return request<MediaImportJob>("/api/media/imports/upload", { method: "POST", body }); },
+  selectVideoClip: (id: string, start_ms: number, end_ms: number) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}/clip`, { method: "POST", body: JSON.stringify({ start_ms, end_ms }) }),
   importStatus: (id: string) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}`),
   cancelImport: (id: string) => request<{ ok: boolean }>(`/api/media/imports/${encodeURIComponent(id)}`, { method: "DELETE" }),
   sendImport: async (id: string, receiverIds: string[], durationMs: number, caption?: string, sound?: File) => {

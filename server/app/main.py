@@ -42,6 +42,14 @@ def _migrate_sqlite_columns() -> None:
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
+    if "media_imports" in insp.get_table_names():
+        columns = {c["name"] for c in insp.get_columns("media_imports")}
+        with engine.begin() as conn:
+            for name, kind in {"platform": "VARCHAR(20)", "title": "VARCHAR(300)", "source_path": "VARCHAR(512)",
+                               "source_duration_ms": "INTEGER", "start_ms": "INTEGER", "end_ms": "INTEGER",
+                               "reserved_bytes": "INTEGER"}.items():
+                if name not in columns:
+                    conn.execute(text(f"ALTER TABLE media_imports ADD COLUMN {name} {kind}"))
     if "media_messages" in insp.get_table_names():
         cols = {c["name"] for c in insp.get_columns("media_messages")}
         with engine.begin() as conn:
@@ -190,7 +198,9 @@ app.include_router(imports.router, prefix="/api")
 
 @app.get("/api/media/capabilities")
 def api_capabilities():
-    return {"avatar_upload": True, "batch_upload": True, "tiktok_import": settings.tiktok_import_enabled, "api_version": 3}
+    return {"avatar_upload": True, "batch_upload": True, "tiktok_import": settings.tiktok_import_enabled,
+            "youtube_import": settings.youtube_import_enabled, "instagram_import": settings.instagram_import_enabled,
+            "video_clip": settings.video_clip_enabled, "api_version": 4}
 
 
 @app.post("/api/media/avatar", response_model=UserResponse)

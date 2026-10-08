@@ -7,6 +7,7 @@ import { useDashboardChrome } from "../context/DashboardChromeContext";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import {
   api,
+  apiUrl,
   fetchDesktopLatest,
   logoutSession,
   type Friend,
@@ -346,8 +347,11 @@ export default function DashboardPage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [importJob, setImportJob] = useState<MediaImportJob | null>(null);
+  const [clippingEnabled, setClippingEnabled] = useState(false);
+  const [preparingVideo, setPreparingVideo] = useState(false);
+  useEffect(() => { void api.videoCapabilities().then(c => setClippingEnabled(Boolean(c.video_clip))).catch(() => undefined); }, []);
   const importedVideo = importJob?.status === "ready" && Boolean(importJob.media_url);
-  const importLocksMedia = Boolean(importJob && ["queued", "fetching", "optimizing", "ready"].includes(importJob.status));
+  const importLocksMedia = preparingVideo || Boolean(importJob && !["failed", "cancelled"].includes(importJob.status));
   const [soundFile, setSoundFile] = useState<File | null>(null);
   const [editorPreviewUrl, setEditorPreviewUrl] = useState<string | null>(null);
   const [editorPreviewIsVideo, setEditorPreviewIsVideo] = useState(false);
@@ -393,7 +397,7 @@ export default function DashboardPage() {
   const overlaySound = hasVisualMedia && soundFile ? soundFile : undefined;
   const showLayoutEditor = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
   const hasSendMedia = importedVideo || Boolean(uploadFile) || imageLayers.length > 0;
-  const canSend = hasSendMedia && receiverIds.length > 0 && !loading;
+  const canSend = hasSendMedia && receiverIds.length > 0 && !loading && (!importLocksMedia || importedVideo);
 
   const desktopUrl =
     desktopDownload?.download_url ?? "https://screenping.xyz/api/desktop/download";
@@ -518,7 +522,7 @@ export default function DashboardPage() {
     (files: File[]) => {
       if (!files.some(f => ["image", "video"].includes(guessMediaKind(f)))) return;
       if (importLocksMedia) {
-        setStatus("Remove the TikTok video before adding another image or video");
+        setStatus("Remove the current video before adding another image or video");
         return;
       }
       const video = files.find((f) => guessMediaKind(f) === "video");
@@ -527,6 +531,13 @@ export default function DashboardPage() {
         revokeLayerUrls(imageLayersRef.current);
         setImageLayers([]);
         setActiveLayerId(null);
+        if (clippingEnabled) {
+          setFile(null); setPreparingVideo(true); setStatus("Uploading video source…");
+          void api.uploadVideoSource(video).then(setImportJob).catch(err => setStatus(err instanceof Error ? err.message : "Could not upload the video"))
+            .finally(() => setPreparingVideo(false));
+          setLayout(DEFAULT_LAYOUT); setOverlayCaption(""); setCaptionLayout(DEFAULT_CAPTION_LAYOUT);
+          return;
+        }
         setFile(video);
         setLayout(DEFAULT_LAYOUT);
         setOverlayCaption("");
@@ -545,7 +556,7 @@ export default function DashboardPage() {
         setStatus(error instanceof Error ? error.message : "Could not add image");
       });
     },
-    [addImageFiles, importLocksMedia],
+    [addImageFiles, importLocksMedia, clippingEnabled],
   );
 
   const ingestDroppedFiles = useCallback(
@@ -849,10 +860,18 @@ export default function DashboardPage() {
   }
 
   async function handleSavePing() {
+    if (importLocksMedia && !importedVideo) return;
     const hasLayers = imageLayers.length > 0;
-    const uploadFile = file ?? soundFile;
-    if (!hasLayers && !uploadFile) return;
+    let uploadFile = file ?? soundFile;
+    if (!hasLayers && !uploadFile && !importedVideo) return;
     try {
+      if (importedVideo && importJob?.media_url) {
+        // Download only on explicit local saving, never during a normal send.
+        const response = await fetch(apiUrl(importJob.media_url), { credentials: "include" });
+        if (!response.ok) throw new Error("Could not save the video; import it again");
+        const name = (importJob.title || "Video excerpt").replace(/[\\/:*?"<>|]/g, "_");
+        uploadFile = new File([await response.blob()], name + ".mp4", { type: "video/mp4" });
+      }
       if (hasLayers) {
         await savePing({
           name: saveName || (imageLayers.length === 1 ? imageLayers[0].name : `${imageLayers.length} layers`),
@@ -896,9 +915,10 @@ export default function DashboardPage() {
   }
 
   async function loadSavedPing(id: string) {
-    setImportJob(null);
     const saved = await getSavedPing(id);
     if (!saved) return;
+    if (importJob) await api.cancelImport(importJob.id).catch(() => undefined);
+    setImportJob(null);
 
     // Keep the saved Stay on screen — don't re-probe media length on this load.
     skipDurationSyncRef.current = true;
@@ -938,7 +958,13 @@ export default function DashboardPage() {
         setSoundFile(mediaFile);
       } else if (saved.mediaType === "video") {
         loadedVideo = true;
-        setFile(mediaFile);
+        if (clippingEnabled) {
+          setFile(null);
+          setPreparingVideo(true);
+          try { setImportJob(await api.uploadVideoSource(mediaFile)); }
+          catch (err) { setStatus(err instanceof Error ? err.message : "Could not upload the video"); return; }
+          finally { setPreparingVideo(false); }
+        } else setFile(mediaFile);
         setSoundFile(sound);
       } else {
         const preview = await createEditorPreviewUrl(mediaFile);
@@ -1228,15 +1254,16 @@ export default function DashboardPage() {
               <div className="compose-side-right-body min-h-0 flex-1 space-y-3">
               <section className="form-section compose-media-section space-y-2.5">
                 <h3 className="form-section-title">Media</h3>
-                <TikTokImport job={importJob} onChange={next => {
+                <TikTokImport job={importJob} clipping={clippingEnabled} onChange={next => {
                   const firstReady = next?.status === "ready" && importJob?.status !== "ready";
+                  if (next && next.id !== importJob?.id) setLayout(DEFAULT_LAYOUT);
                   setImportJob(next);
                   if (firstReady) {
                     setFile(null); setImageLayers([]); setActiveLayerId(null);
                     setDuration(Math.max(MIN_DURATION_MS, next.duration_ms || DEFAULT_DURATION_MS));
-                    setLayout(DEFAULT_LAYOUT);
                   }
                 }} />
+                {preparingVideo && <p role="status" className="text-xs text-slate-400">Uploading video source…</p>}
                 {!importLocksMedia && <FilePicker
                   label="File"
                   hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
@@ -1299,7 +1326,7 @@ export default function DashboardPage() {
                         ? `Send to ${receiverIds.length} friends`
                         : "Send ping"}
                   </button>
-                  {hasSendMedia && !importedVideo && (
+                  {hasSendMedia && (!importLocksMedia || importedVideo) && (
                     <button
                       type="button"
                       onClick={() => setShowSaveInput((v) => !v)}
@@ -1324,7 +1351,7 @@ export default function DashboardPage() {
                     {status}
                   </p>
                 )}
-                {showSaveInput && hasSendMedia && (
+                {showSaveInput && hasSendMedia && (!importLocksMedia || importedVideo) && (
                   <div className="flex gap-2">
                     <input
                       className="field-input min-w-0 flex-1"

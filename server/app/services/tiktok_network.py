@@ -11,9 +11,9 @@ from urllib.parse import urlsplit, urlunsplit
 ALLOWED_DOMAINS = ("tiktok.com", "tiktokv.com", "tiktokcdn.com", "tiktokcdn-us.com", "byteoversea.com", "ibytedtos.com")
 
 
-def allowed_host(host: str) -> bool:
+def allowed_host(host: str, domains=None) -> bool:
     host = host.lower().rstrip(".")
-    return any(host == domain or host.endswith("." + domain) for domain in ALLOWED_DOMAINS)
+    return any(host == domain or host.endswith("." + domain) for domain in (domains or ALLOWED_DOMAINS))
 
 
 def validate_url(url: str, *, initial: bool = False) -> str:
@@ -41,14 +41,14 @@ def public_ip(address: str) -> bool:
     return ip.is_global and not ip.is_multicast and not (getattr(ip, "ipv4_mapped", None) and not ip.ipv4_mapped.is_global)
 
 
-def install_network_guard():
+def install_network_guard(domains=None):
     approved_addresses: set[str] = set()
     original_dns = socket.getaddrinfo
     original_connect = socket.socket.connect
     original_connect_ex = socket.socket.connect_ex
 
     def guarded_dns(host, port, *args, **kwargs):
-        if not isinstance(host, str) or not allowed_host(host) or int(port) != 443:
+        if not isinstance(host, str) or not allowed_host(host, domains) or int(port) != 443:
             raise OSError("Download destination blocked")
         answers = original_dns(host, port, *args, **kwargs)
         if not answers or any(not public_ip(answer[4][0]) for answer in answers):

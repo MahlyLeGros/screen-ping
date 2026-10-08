@@ -1,17 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type MediaImportJob } from "../lib/api";
+import VideoClipDialog from "./VideoClipDialog";
 
-export default function TikTokImport({ job, onChange }: {
-  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void;
+export default function TikTokImport({ job, onChange, clipping = false }: {
+  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; clipping?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [videoName, setVideoName] = useState("TikTok video");
   const urlInput = useRef<HTMLInputElement>(null);
+  const [clipOpen, setClipOpen] = useState(false);
+  const openedJob = useRef<string | null>(null);
   const callback = useRef(onChange);
   callback.current = onChange;
-  const active = Boolean(job && ["queued", "fetching", "optimizing"].includes(job.status));
+  const active = Boolean(job && ["queued", "fetching", "optimizing", "uploading", "queued_clip", "cropping"].includes(job.status));
+  useEffect(() => {
+    if (job?.status === "awaiting_selection" && openedJob.current !== job.id) {
+      openedJob.current = job.id; setClipOpen(true);
+    }
+    if (!job) { openedJob.current = null; setClipOpen(false); }
+  }, [job?.id, job?.status]);
   useEffect(() => {
     if (!job || !active) return;
     let disposed = false;
@@ -26,7 +35,7 @@ export default function TikTokImport({ job, onChange }: {
     setBusy(true); setError("");
     try {
       if (job) await api.cancelImport(job.id).catch(() => undefined);
-      onChange(await api.startTikTokImport(url.trim()));
+      onChange(await (clipping ? api.startVideoImport(url.trim()) : api.startTikTokImport(url.trim())));
       const author = new URL(url.trim()).pathname.match(/\/@([^/]+)\/video\//)?.[1];
       setVideoName(author ? `TikTok — @${author}` : "TikTok video");
       setUrl("");
@@ -34,16 +43,16 @@ export default function TikTokImport({ job, onChange }: {
     finally { setBusy(false); }
   }
   return <div className="space-y-2">
-    <label className="field-label" htmlFor="tiktok-url">TikTok link</label>
+    <label className="field-label" htmlFor="tiktok-url">{clipping ? "Video link" : "TikTok link"}</label>
     <div className="flex gap-2">
       <input ref={urlInput} id="tiktok-url" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off"
-        className="field-input min-w-0 flex-1" placeholder="Paste a TikTok video link" value={url}
+        className="field-input min-w-0 flex-1" placeholder={clipping ? "TikTok, YouTube, Shorts or Instagram Reel" : "Paste a TikTok video link"} value={url}
         onChange={event => setUrl(event.target.value)}
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
     </div>
     <p role="status" aria-live="polite" className="text-xs text-slate-400">
-      {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Retrieving video…", optimizing: "Optimizing video…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : "Public videos up to 3 minutes. No TikTok login needed.")}
+      {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : clipping ? "Public videos up to 20 minutes. Choose an excerpt up to 30 seconds." : "Public videos up to 3 minutes. No TikTok login needed.")}
     </p>
     {job?.status === "ready" && <div>
       <span className="field-label">File</span>
@@ -52,17 +61,23 @@ export default function TikTokImport({ job, onChange }: {
           onClick={() => { urlInput.current?.scrollIntoView({ block: "center", behavior: "smooth" }); urlInput.current?.focus(); }}>
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-base text-slate-400">✓</span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-white" title={videoName}>{videoName}</span>
+            <span className="block truncate text-sm font-medium text-white" title={job.title || videoName}>{job.title || videoName}</span>
             <span className="block text-xs text-slate-500">Click to replace</span>
           </span>
         </button>
-        <button type="button" aria-label="Remove TikTok video" title="Remove TikTok video" disabled={busy}
+        <button type="button" aria-label="Remove imported video" title="Remove imported video" disabled={busy}
           className="absolute right-2 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded p-2 text-slate-500 transition hover:text-red-400"
           onClick={() => { setBusy(true); void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false)); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" /></svg>
         </button>
       </div>
     </div>}
+    {job?.preview_url && job.source_duration_ms && ["awaiting_selection", "ready"].includes(job.status) && <button type="button" className="btn-secondary" onClick={() => setClipOpen(true)}>
+      {job.status === "ready" ? "Modify excerpt" : "Choose excerpt"}
+    </button>}
+    {clipOpen && job?.preview_url && <VideoClipDialog key={job.id} job={job} onClose={() => setClipOpen(false)}
+      onChange={onChange} onDraft={(start_ms, end_ms) => onChange({ ...job, start_ms, end_ms,
+        status: job.status === "ready" && (start_ms !== job.start_ms || end_ms !== job.end_ms) ? "awaiting_selection" : job.status })} />}
     {job && !active && job.status !== "cancelled" && job.status !== "ready" && <button type="button" className="btn-secondary" disabled={busy} onClick={() => {
       setBusy(true);
       void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false));
