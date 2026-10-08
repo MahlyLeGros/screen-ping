@@ -349,6 +349,7 @@ export default function DashboardPage() {
   const [importJob, setImportJob] = useState<MediaImportJob | null>(null);
   const [clippingEnabled, setClippingEnabled] = useState(false);
   const [preparingVideo, setPreparingVideo] = useState(false);
+  const [videoUploadError, setVideoUploadError] = useState("");
   useEffect(() => { void api.videoCapabilities().then(c => setClippingEnabled(Boolean(c.video_clip))).catch(() => undefined); }, []);
   const importedVideo = importJob?.status === "ready" && Boolean(importJob.media_url);
   const importLocksMedia = preparingVideo || Boolean(importJob && !["failed", "cancelled"].includes(importJob.status));
@@ -532,8 +533,11 @@ export default function DashboardPage() {
         setImageLayers([]);
         setActiveLayerId(null);
         if (clippingEnabled) {
-          setFile(null); setPreparingVideo(true); setStatus("Uploading video source…");
-          void api.uploadVideoSource(video).then(setImportJob).catch(err => setStatus(err instanceof Error ? err.message : "Could not upload the video"))
+          setFile(null); setPreparingVideo(true); setVideoUploadError(""); setStatus("Uploading video source…");
+          void api.uploadVideoSource(video).then(job => { setImportJob(job); setStatus(""); }).catch(err => {
+            const message = err instanceof Error ? err.message : "Could not upload the video";
+            setVideoUploadError(message); setStatus(message);
+          })
             .finally(() => setPreparingVideo(false));
           setLayout(DEFAULT_LAYOUT); setOverlayCaption(""); setCaptionLayout(DEFAULT_CAPTION_LAYOUT);
           return;
@@ -1264,13 +1268,14 @@ export default function DashboardPage() {
                   }
                 }} />
                 {preparingVideo && <p role="status" className="text-xs text-slate-400">Uploading video source…</p>}
+                {videoUploadError && !importJob && !preparingVideo && <p role="alert" className="text-sm text-red-300">{videoUploadError}</p>}
                 {!importLocksMedia && <FilePicker
                   label="File"
                   hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
                   accept="image/*,video/mp4,video/webm"
                   value={file}
-                  onChange={next => { setImportJob(null); onMediaFileChange(next); }}
-                  onPickFiles={files => { setImportJob(null); ingestDroppedFiles(files); }}
+                  onChange={onMediaFileChange}
+                  onPickFiles={ingestDroppedFiles}
                   multiple
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
                 />}

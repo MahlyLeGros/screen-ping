@@ -73,6 +73,21 @@ def prepared_job(db):
     return job
 
 
+def test_replacing_idle_drafts_frees_user_quota(db):
+    drafts = [prepared_job(db) for _ in range(5)]
+    drafts[0].status = "ready"
+    other = prepared_job(db); other.user_id = "other"
+    active = prepared_job(db); active.status = "queued"
+    db.commit()
+    with pytest.raises(HTTPException) as error:
+        imports.reserve_capacity(db, "owner", 1)
+    assert "storage" in error.value.detail.lower()
+    new = imports.new_clip_job(db, db.get(User, "owner"), "local", "", 100, replace_previous=True)
+    assert new.status == "queued"
+    assert all(job.status == "cancelled" for job in drafts)
+    assert other.status == "awaiting_selection" and active.status == "queued"
+
+
 @pytest.mark.parametrize("volume", [-0.1, 1.1, float("nan"), float("inf")])
 def test_reject_invalid_clip_volume(volume):
     from pydantic import ValidationError

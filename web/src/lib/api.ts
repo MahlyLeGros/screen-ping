@@ -387,8 +387,8 @@ async function parseUploadError(res: Response): Promise<never> {
 export const api = {
   startTikTokImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url }) }),
   videoCapabilities: () => request<{ video_clip: boolean; youtube_import: boolean; instagram_import: boolean }>("/api/media/capabilities"),
-  startVideoImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url, clip: true }) }),
-  uploadVideoSource: (file: File) => { const body = new FormData(); body.append("file", file); return request<MediaImportJob>("/api/media/imports/upload", { method: "POST", body }); },
+  startVideoImport: (url: string) => request<MediaImportJob>("/api/media/imports", { method: "POST", body: JSON.stringify({ url, clip: true, replace_previous: true }) }),
+  uploadVideoSource: (file: File) => { const body = new FormData(); body.append("file", file); body.append("replace_previous", "true"); return request<MediaImportJob>("/api/media/imports/upload", { method: "POST", body }); },
   selectVideoClip: (id: string, start_ms: number, end_ms: number, volume = 1) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}/clip`, { method: "POST", body: JSON.stringify({ start_ms, end_ms, volume }) }),
   importStatus: (id: string) => request<MediaImportJob>(`/api/media/imports/${encodeURIComponent(id)}`),
   cancelImport: (id: string) => request<{ ok: boolean }>(`/api/media/imports/${encodeURIComponent(id)}`, { method: "DELETE" }),

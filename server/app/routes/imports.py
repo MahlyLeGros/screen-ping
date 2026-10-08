@@ -26,6 +26,7 @@ _queue_lock = threading.Lock()
 class ImportRequest(BaseModel):
     url: str = Field(max_length=2048)
     clip: bool = False
+    replace_previous: bool = False
 
 
 class ClipRequest(BaseModel):
@@ -46,11 +47,24 @@ def reserve_capacity(db, user_id, reservation):
     reserved = stored.with_entities(func.coalesce(func.sum(func.coalesce(MediaImport.reserved_bytes, 3 * FINAL_BYTES)), 0)).scalar()
     if reserved + reservation > GLOBAL_BYTES:
         raise HTTPException(429, "Temporary video storage is full; remove a video or try again later")
-    if active.count() >= 20 or active.filter(MediaImport.user_id == user_id).count() >= 2 or stored.filter(MediaImport.user_id == user_id).count() >= 5:
+    if stored.filter(MediaImport.user_id == user_id).count() >= 5:
+        raise HTTPException(429, "Import storage is full; remove a previous video or wait for it to expire")
+    if active.count() >= 20 or active.filter(MediaImport.user_id == user_id).count() >= 2:
         raise HTTPException(429, "Import queue full; please try again shortly")
 
 
-def new_clip_job(db, user, platform, url, reservation, status="queued"):
+def replace_idle_imports(db, user_id):
+    # The composer has one video slot. Leave in-flight work and other users alone.
+    # The worker cleans cancelled files while preserving media used by sent pings.
+    for previous in db.query(MediaImport).filter(MediaImport.user_id == user_id,
+            MediaImport.status.in_(("ready", "awaiting_selection"))).with_for_update().all():
+        previous.status = "cancelled"
+    db.flush()
+
+
+def new_clip_job(db, user, platform, url, reservation, status="queued", replace_previous=False):
+    if replace_previous:
+        replace_idle_imports(db, user.id)
     reserve_capacity(db, user.id, reservation)
     job = MediaImport(user_id=user.id, platform=platform, url=url, status=status, reserved_bytes=reservation,
                       expires_at=utcnow() + timedelta(minutes=30))
@@ -96,7 +110,7 @@ def start_import(body: ImportRequest, user: User = Depends(get_current_user), db
             raise HTTPException(429, "Too many imports; please wait")
         with _queue_lock:
             # Covers tracks, merge, preview and copy scratch space before download.
-            return job_response(new_clip_job(db, user, platform, url, 4 * SOURCE_BYTES + 2 * FINAL_BYTES))
+            return job_response(new_clip_job(db, user, platform, url, 4 * SOURCE_BYTES + 2 * FINAL_BYTES, replace_previous=body.replace_previous))
     if not settings.tiktok_import_enabled:
         raise HTTPException(503, "TikTok import is currently unavailable; upload a video instead")
     try:
@@ -122,13 +136,13 @@ def start_import(body: ImportRequest, user: User = Depends(get_current_user), db
 
 
 @router.post("/upload")
-async def upload_source(file: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+async def upload_source(file: UploadFile = File(...), replace_previous: bool = Form(False), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not settings.video_clip_enabled:
         raise HTTPException(503, "Video clipping is currently unavailable")
     if not check_upload_rate_limit(user.id):
         raise HTTPException(429, "Too many uploads; please wait")
     with _queue_lock:
-        job = new_clip_job(db, user, "local", "", 2 * LOCAL_BYTES + 2 * SOURCE_BYTES + 2 * FINAL_BYTES, "uploading")
+        job = new_clip_job(db, user, "local", "", 2 * LOCAL_BYTES + 2 * SOURCE_BYTES + 2 * FINAL_BYTES, "uploading", replace_previous=replace_previous)
     target = Path(settings.upload_dir) / f"source-{job.id}.input"
     try:
         size = 0
