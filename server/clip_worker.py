@@ -60,12 +60,15 @@ def process_job(job_id):
                         job = db.get(MediaImport, job_id)
                         if not job or job.status == "cancelled" or not settings.video_clip_enabled or not enabled(job.platform) or time.monotonic() - started > timeout:
                             terminate_tree(process); break
-                        if job.status == "fetching":
+                        if job.status in ("fetching", "optimizing", "cropping"):
                             try:
                                 progress = json.loads(output.read_text(encoding="utf-8").splitlines()[-1])
                             except (ValueError, IndexError): progress = {}
                             if progress.get("phase") == "optimizing":
-                                job.status = "optimizing"; db.commit()
+                                if job.status == "fetching": job.status = "optimizing"
+                                percent = progress.get("progress_percent")
+                                if type(percent) is int and 0 <= percent <= 99: job.progress_percent = percent
+                                db.commit()
                     time.sleep(0.5)
             finally:
                 if process.poll() is None: terminate_tree(process)
@@ -99,6 +102,7 @@ def process_job(job_id):
             job.reserved_bytes = (source_file.stat().st_size if source_file else 0) + 3 * FINAL_BYTES
             job.expires_at = utcnow() + timedelta(minutes=30)
             job.error = None
+            job.progress_percent = 100
             db.commit()
             for path in (previous_source, previous_clip):
                 if path and path not in (job.source_path, job.storage_path) and not media_path_still_in_use(db, path):
@@ -127,7 +131,9 @@ def run():
             jobs = db.query(MediaImport).filter(MediaImport.status.in_(("queued", "queued_clip"))).order_by(MediaImport.created_at).all()
             job = next((j for j in jobs if enabled(j.platform or "tiktok") and (not j.platform or settings.video_clip_enabled)), None)
             job_id = job.id if job else None
-            if job: job.status = "cropping" if job.status == "queued_clip" else "fetching"
+            if job:
+                job.status = "cropping" if job.status == "queued_clip" else "fetching"
+                job.progress_percent = 0
             db.commit()
         if job_id: process_job(job_id)
         else: time.sleep(1)

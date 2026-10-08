@@ -51,7 +51,7 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
     </div>
-    {job?.status === "optimizing" && !error && !job.error && <div className="video-import-progress" role="progressbar" aria-label="Optimizing video" aria-valuetext="In progress"><span /></div>}
+    {job?.status === "optimizing" && !error && !job.error && <div className="flex items-center gap-2"><div className="video-import-progress" role="progressbar" aria-label="Optimizing video" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress_percent ?? undefined}><span style={{ width: `${job.progress_percent ?? 0}%` }} /></div><span className="shrink-0 text-xs text-slate-400">{job.progress_percent == null ? "…" : `${job.progress_percent}%`}</span></div>}
     {(error || job?.error || (job && job.status !== "ready" && job.status !== "awaiting_selection" && job.status !== "optimizing")) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
       {error || job?.error || (job ? ({ queued: "Waiting for import…", fetching: "Preparing source video…", optimizing: "Optimizing video…", uploading: "Uploading source video…", awaiting_selection: "Choose your excerpt before sending", queued_clip: "Waiting to prepare your excerpt…", cropping: "Preparing your excerpt…", ready: "Ready — place the video below", failed: "Import failed; upload the file instead", cancelled: "Import cancelled" })[job.status] : "")}
     </p>}

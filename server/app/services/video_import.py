@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from app.services.tiktok_network import ALLOWED_DOMAINS, allowed_host, install_network_guard, validate_url
@@ -14,6 +16,7 @@ from app.services.tiktok_extract import probe
 SOURCE_BYTES = 256 * 1024 * 1024
 LOCAL_BYTES = FINAL_BYTES = 50 * 1024 * 1024
 GLOBAL_BYTES = 2 * 1024 * 1024 * 1024
+PROGRESS_START, PROGRESS_END = 0, 99
 DOMAINS = {
     "tiktok": ALLOWED_DOMAINS,
     "youtube": ("youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtube-nocookie.com", "youtubei.googleapis.com"),
@@ -67,8 +70,31 @@ def validate_clip(duration_ms, start_ms, end_ms):
 
 
 def run_ffmpeg(arguments, timeout):
-    subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-protocol_whitelist", "file,pipe", *arguments],
-                   check=True, timeout=timeout, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    duration_ms = (round(float(arguments[arguments.index("-t") + 1]) * 1000) if "-t" in arguments
+                   else source_duration(probe(Path(arguments[arguments.index("-i") + 1]))))
+    with tempfile.TemporaryDirectory(prefix="ffmpeg-progress-") as temporary:
+        progress_file = Path(temporary) / "progress.txt"
+        process = subprocess.Popen(["ffmpeg", "-nostdin", "-v", "error", "-protocol_whitelist", "file,pipe",
+                                    "-progress", str(progress_file), "-stats_period", "0.5", *arguments],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        started, last = time.monotonic(), -1
+        try:
+            while True:
+                if progress_file.exists():
+                    values = re.findall(r"^out_time_us=(\d+)$", progress_file.read_text(), re.MULTILINE)
+                    if values:
+                        percent = min(PROGRESS_END, PROGRESS_START + int(int(values[-1]) / (duration_ms * 1000) * (PROGRESS_END - PROGRESS_START)))
+                        if percent > last:
+                            print(json.dumps({"phase": "optimizing", "progress_percent": percent}), flush=True)
+                            last = percent
+                if process.poll() is not None:
+                    if process.returncode: raise subprocess.CalledProcessError(process.returncode, "ffmpeg")
+                    break
+                if time.monotonic() - started > timeout: raise subprocess.TimeoutExpired("ffmpeg", timeout)
+                time.sleep(0.25)
+        finally:
+            if process.poll() is None: process.kill()
+            process.wait()
 
 
 def clip_video(source, final, start_ms, end_ms, volume=1.0):
@@ -180,10 +206,13 @@ if __name__ == "__main__":
             result = clip_video(Path(source_arg), directory / "ready.mp4", int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]) if len(sys.argv) > 6 else 1.0)
         else:
             source, title = (Path(source_arg), "Uploaded video") if mode == "local" else fetch_source(source_arg, directory)
-            print(json.dumps({"phase": "optimizing"}), flush=True)
+            original_duration = source_duration(probe(source))
+            PROGRESS_END = 80 if original_duration <= 30000 else 99
+            print(json.dumps({"phase": "optimizing", "progress_percent": 0}), flush=True)
             duration = prepare_source(source, directory / "source.mp4")
             result = {"source_duration_ms": duration, "title": title}
             if duration <= 30000:
+                PROGRESS_START, PROGRESS_END = 80, 99
                 result.update(clip_video(directory / "source.mp4", directory / "ready.mp4", 0, duration))
         print(json.dumps(result), flush=True)
     except Exception as error:

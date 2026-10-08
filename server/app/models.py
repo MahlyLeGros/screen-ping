@@ -182,4 +182,5 @@ class MediaImport(Base):
     start_ms: Mapped[int | None] = mapped_column(nullable=True)
     end_ms: Mapped[int | None] = mapped_column(nullable=True)
     volume: Mapped[float | None] = mapped_column(nullable=True)
+    progress_percent: Mapped[int | None] = mapped_column(nullable=True)
     reserved_bytes: Mapped[int | None] = mapped_column(nullable=True)

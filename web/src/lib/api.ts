@@ -305,6 +305,7 @@ export interface MediaImportJob {
   platform?: string;
   title?: string | null;
   source_duration_ms?: number | null;
+  progress_percent?: number | null;
   preview_url?: string | null;
   start_ms?: number | null;
   end_ms?: number | null;

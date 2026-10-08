@@ -1,4 +1,5 @@
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -101,6 +102,30 @@ def test_clip_volume_persisted(db, monkeypatch):
     monkeypatch.setattr(imports, "check_upload_rate_limit", lambda _: True)
     result = imports.select_clip(job.id, imports.ClipRequest(start_ms=1000, end_ms=4000, volume=0.35), db.get(User, "owner"), db)
     assert result["volume"] == job.volume == 0.35
+    assert result["progress_percent"] == 0
+
+
+def test_encoder_progress_uses_processed_video_time(monkeypatch, capsys):
+    from app.services import video_import
+    class Encoder:
+        returncode = 0
+        def __init__(self, args, **kwargs):
+            self.path = Path(args[args.index("-progress") + 1])
+            self.path.write_text("out_time_us=5000000\n")
+            self.polls = 0
+        def poll(self):
+            self.polls += 1
+            if self.polls == 1:
+                self.path.write_text("out_time_us=10000000\n")
+                return None
+            return 0
+        def wait(self): return 0
+    monkeypatch.setattr(video_import.subprocess, "Popen", Encoder)
+    monkeypatch.setattr(video_import.time, "sleep", lambda _: None)
+    video_import.run_ffmpeg(["-i", "local.mp4", "-t", "10", "output.mp4"], 10)
+    import json
+    updates = [json.loads(line)["progress_percent"] for line in capsys.readouterr().out.splitlines()]
+    assert updates == [49, 99]
 
 
 @pytest.mark.parametrize("volume", [0, 0.35, 1])

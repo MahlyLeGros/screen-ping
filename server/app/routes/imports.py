@@ -88,7 +88,7 @@ def owned_job(db: Session, user: User, job_id: str) -> MediaImport:
 
 
 def job_response(job: MediaImport):
-    return {"id": job.id, "status": job.status, "error": job.error, "duration_ms": job.duration_ms,
+    return {"id": job.id, "status": job.status, "error": job.error, "duration_ms": job.duration_ms, "progress_percent": job.progress_percent,
             "media_url": sign_media_url(job.storage_path, job.user_id, [job.storage_path]) if job.status == "ready" else None,
             "platform": job.platform or "tiktok", "title": job.title,
             "source_duration_ms": job.source_duration_ms, "start_ms": job.start_ms, "end_ms": job.end_ms, "volume": job.volume if job.volume is not None else 1.0,
@@ -189,7 +189,7 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
             raise HTTPException(429, "Processing queue full; try again shortly")
         job.start_ms = body.start_ms; job.end_ms = body.end_ms
         job.volume = body.volume
-        job.status = "queued_clip"; job.error = None
+        job.status = "queued_clip"; job.error = None; job.progress_percent = 0
         job.expires_at = utcnow() + timedelta(minutes=30)
         db.commit()
     return job_response(job)
