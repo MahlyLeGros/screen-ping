@@ -56,15 +56,16 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
     </p>}
     {job?.status === "ready" && <div>
       <span className="field-label">File</span>
-      <div className="upload-zone px-3 py-3">
+      <div className="upload-zone px-2.5 py-2 pr-[6.5rem]">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 bg-transparent text-left"
           onClick={() => { urlInput.current?.scrollIntoView({ block: "center", behavior: "smooth" }); urlInput.current?.focus(); }}>
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-base text-slate-400">✓</span>
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-sm text-slate-400">✓</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-white" title={job.title || videoName}>{job.title || videoName}</span>
             <span className="block text-xs text-slate-500">Click to replace</span>
           </span>
         </button>
+        <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
         {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Modify excerpt" title="Modify excerpt" disabled={busy}
           className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
           onClick={() => setClipOpen(true)}>
@@ -81,6 +82,7 @@ export default function TikTokImport({ job, onChange, clipping = false }: {
           onClick={() => { setBusy(true); void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false)); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" /></svg>
         </button>
+        </div>
       </div>
     </div>}
     {job?.preview_url && job.source_duration_ms && job.status === "awaiting_selection" && <button type="button" className="btn-secondary" onClick={() => setClipOpen(true)}>
