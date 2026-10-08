@@ -1062,7 +1062,6 @@ export default function DashboardPage() {
           <form noValidate onSubmit={handleSend} className="compose-layout compose-layout-fill">
             <ComposeColumnGlows />
             <section className="compose-recipients-mobile compose-mobile-block order-0 panel p-3 xl:hidden" aria-label="Recipients">
-              <h3 className="form-section-title mb-2">To</h3>
               <FriendPicker
                 friends={friends}
                 selectedIds={receiverIds}
