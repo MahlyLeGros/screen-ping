@@ -1290,7 +1290,7 @@ function MediaLayoutEditor({
   );
 
   const layoutControls = (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="layout-action-controls flex flex-wrap items-center gap-2">
       <details className="layout-precision-controls">
         <summary className="pill-btn cursor-pointer">Position &amp; rotation</summary>
         <div className="grid grid-cols-2 gap-2 p-2">

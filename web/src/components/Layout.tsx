@@ -175,7 +175,7 @@ function DashboardHeaderActions() {
   if (!chrome) return null;
 
   return (
-    <button type="button" onClick={chrome.onLogout} className="btn-ghost inline-flex text-xs sm:text-sm">
+    <button type="button" onClick={chrome.onLogout} className="btn-ghost inline-flex items-center justify-center text-xs sm:text-sm">
       Log out
     </button>
   );

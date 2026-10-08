@@ -1785,8 +1785,9 @@
   .app-bg { height: auto; max-height: none; min-height: 100dvh; overflow: visible; }
   .app-bg > .dashboard-main { flex: none; overflow: visible !important; z-index: 2; }
   .app-bg:has(.compose-mobile-send) > .app-footer { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
-  .compose-layout { display: flex; flex-direction: column; padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
+  .compose-layout { display: flex; flex-direction: column; padding-bottom: 0; }
   .compose-side-right, .compose-side-right-body { display: contents; }
+  .compose-side-right::before, .compose-side-right::after { display: none; }
   .compose-media-section { order: 0; }
   .compose-center-col { order: 1; }
   .compose-recipients-mobile { order: 2; }
@@ -1801,6 +1802,17 @@
   .field-input { font-size: 16px; }
   button, select, input[type="range"], summary { min-height: 44px; }
   .compose-preview-mobile-controls { gap: 0.5rem; flex-wrap: wrap; }
+  .layout-precision-controls { display: none; }
+  .layout-action-controls { flex-wrap: nowrap; gap: 0.25rem; }
+  .layout-action-controls .pill-btn { min-width: 44px; padding-inline: 0.3125rem !important; }
+  .layout-action-controls > .pill-group { flex-shrink: 0; }
+  .layout-action-controls > button { flex-shrink: 0; }
+  .compose-advanced-section,
+  .compose-side-left { padding: 0.5rem 0.75rem; }
+  .compose-advanced-section:not([open]) { margin: 0; }
+  .compose-advanced-section > summary,
+  .mobile-library-summary { display: list-item; min-height: 44px; padding: 0.75rem 0; font-size: 0.875rem; line-height: 1.25rem; font-weight: 600; text-transform: none; letter-spacing: normal; }
+  .app-bg:has(.compose-mobile-send) > .app-footer { padding-top: 0.5rem; }
   .layout-canvas [data-handle] { width: 22px !important; height: 22px !important; min-height: 22px; }
   .draw-layout { height: auto; min-height: 0; }
   .draw-side-right { order: 1; }
