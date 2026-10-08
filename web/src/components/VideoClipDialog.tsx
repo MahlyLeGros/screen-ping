@@ -15,14 +15,26 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   const [error, setError] = useState("");
   const [previewFailed, setPreviewFailed] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [previewMs, setPreviewMs] = useState(job.start_ms || 0);
   const selectionDrag = useRef<{ pointerId: number; x: number; width: number; start: number; end: number } | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
-  const playingExcerpt = useRef(false);
   const closeRef = useRef(onClose); closeRef.current = onClose;
   const busyRef = useRef(busy); busyRef.current = busy;
   const draftRef = useRef(onDraft); draftRef.current = onDraft;
   useEffect(() => { draftRef.current(start, end); }, [start, end]);
+  useEffect(() => {
+    if (!playing) return;
+    let frame: number;
+    const tick = () => {
+      syncPreview();
+      if (video.current && !video.current.paused) frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [playing, start, end]);
   useEffect(() => {
     // Keep the private source alive only while the user is choosing an excerpt.
     const timer = window.setInterval(() => { void api.importStatus(job.id).catch(() => {}); }, 60000);
@@ -48,20 +60,43 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     if (!Number.isFinite(value)) return;
     const next = Math.max(0, Math.min(Math.round(value), sourceMs - minLength));
     setStart(next); setEnd(Math.min(sourceMs, Math.max(next + minLength, Math.min(end, next + 30000))));
-    playingExcerpt.current = false; video.current?.pause();
+    video.current?.pause(); setPreviewMs(next);
     if (video.current) video.current.currentTime = next / 1000;
   }
   function changeEnd(value: number) {
     if (!Number.isFinite(value)) return;
     const next = Math.max(minLength, Math.min(sourceMs, Math.round(value)));
-    setEnd(next); setStart(Math.max(0, Math.min(next - minLength, Math.max(start, next - 30000))));
-    playingExcerpt.current = false; video.current?.pause();
+    const nextStart = Math.max(0, Math.min(next - minLength, Math.max(start, next - 30000)));
+    setEnd(next); setStart(nextStart);
+    video.current?.pause(); setPreviewMs(nextStart);
+    if (video.current) video.current.currentTime = nextStart / 1000;
   }
   function moveSelection(value: number, length = end - start) {
     const next = Math.max(0, Math.min(Math.round(value), sourceMs - length));
     setStart(next); setEnd(next + length);
-    playingExcerpt.current = false; video.current?.pause();
+    video.current?.pause(); setPreviewMs(next);
     if (video.current) video.current.currentTime = next / 1000;
+  }
+  function syncPreview() {
+    const player = video.current;
+    if (!player) return;
+    const position = player.currentTime * 1000;
+    if (position >= end) {
+      player.pause();
+      if (position > end + 1) player.currentTime = end / 1000;
+      setPreviewMs(end);
+    } else if (position < start - 1) {
+      player.currentTime = start / 1000; setPreviewMs(start);
+    } else setPreviewMs(Math.max(start, position));
+  }
+  async function togglePlayback() {
+    const player = video.current;
+    if (!player) return;
+    if (!player.paused) { player.pause(); return; }
+    setError("");
+    if (player.currentTime * 1000 < start || player.currentTime * 1000 >= end - 1) player.currentTime = start / 1000;
+    try { await player.play(); }
+    catch { setError("Playback could not start. Please try again."); }
   }
   async function confirm() {
     setBusy(true); setError("");
@@ -76,10 +111,26 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
         <button type="button" className="btn-ghost" disabled={busy} onClick={onClose} aria-label="Close excerpt selection">×</button>
       </div>
       <p className="text-sm text-slate-400">Choose up to 30 seconds. Your source is {timeLabel(sourceMs)}.</p>
-      <video ref={video} src={job.preview_url || undefined} controls playsInline preload="metadata" className="clip-source-video"
-        onLoadedMetadata={() => setPreviewFailed(false)}
+      <video ref={video} src={job.preview_url || undefined} muted={muted} playsInline preload="metadata" className="clip-source-video"
+        onLoadedMetadata={() => { setPreviewFailed(false); if (video.current) video.current.currentTime = start / 1000; }}
         onError={() => { setPreviewFailed(true); setError("The preview could not load. Close this menu and import the video again."); }}
-        onTimeUpdate={() => { const player = video.current; if (player && playingExcerpt.current && player.currentTime * 1000 >= end) { player.pause(); playingExcerpt.current = false; } }} />
+        onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
+        onTimeUpdate={syncPreview} />
+      <div className="clip-preview-controls">
+        <button type="button" className="btn-secondary" disabled={busy || previewFailed} onClick={() => void togglePlayback()}>
+          {playing ? "Pause excerpt" : "Play excerpt"}
+        </button>
+        <input type="range" min={0} max={end - start} step={100} value={Math.min(end - start, Math.max(0, previewMs - start))}
+          aria-label="Preview position" disabled={busy || previewFailed} onChange={event => {
+            const next = start + Math.max(0, Math.min(end - start, Number(event.target.value)));
+            if (video.current) video.current.currentTime = next / 1000;
+            setPreviewMs(next);
+            if (next >= end) video.current?.pause();
+          }} />
+        <span className="text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
+        <button type="button" className="btn-ghost" aria-label={muted ? "Enable preview sound" : "Mute preview sound"} aria-pressed={muted}
+          onClick={() => setMuted(value => !value)}>{muted ? "Sound off" : "Sound on"}</button>
+      </div>
       <div className="clip-timeline" style={{ "--clip-start": `${start / sourceMs * 100}%`, "--clip-end": `${end / sourceMs * 100}%` } as React.CSSProperties}>
         <div className="clip-timeline-track" aria-hidden />
         <button type="button" className={`clip-selection${dragging ? " is-dragging" : ""}`} disabled={busy}
@@ -93,7 +144,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
             event.preventDefault(); event.currentTarget.focus();
             event.currentTarget.setPointerCapture(event.pointerId);
             selectionDrag.current = { pointerId: event.pointerId, x: event.clientX, width, start, end };
-            setDragging(true); playingExcerpt.current = false; video.current?.pause();
+            setDragging(true); video.current?.pause();
           }}
           onPointerMove={event => {
             const drag = selectionDrag.current;
@@ -118,12 +169,6 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
       <p className="text-sm text-slate-300" role="status">Selected: {timeLabel(start)} → {timeLabel(end)} · {((end - start) / 1000).toFixed(1)} seconds</p>
       {error && <p role="alert" className="text-sm text-red-300">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="button" className="btn-secondary" disabled={busy || previewFailed} onClick={() => {
-          setError("");
-          const player = video.current; if (!player) return;
-          player.currentTime = start / 1000; playingExcerpt.current = true;
-          void player.play().catch(() => { playingExcerpt.current = false; setError("Tap the video player to allow playback, then retry."); });
-        }}>Play excerpt</button>
         <button type="button" className="btn-primary" disabled={busy || previewFailed} onClick={() => void confirm()}>{busy ? "Preparing…" : "Use this excerpt"}</button>
       </div>
     </div>
