@@ -72,7 +72,7 @@ def process_job(job_id: str):
                 job.storage_path = f"/uploads/{filename}"
                 job.duration_ms = result["duration_ms"]
                 job.status = "ready"
-                job.expires_at = utcnow() + timedelta(minutes=settings.tiktok_import_expiry_minutes)
+                job.expires_at = utcnow() + timedelta(minutes=5)
             else:
                 job.status = "failed"
                 job.error = result.get("error", "Import timed out or was interrupted. Upload the video manually.")

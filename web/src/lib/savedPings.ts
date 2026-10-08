@@ -32,10 +32,12 @@ export interface SavedPingRecord {
   fadeOutMs?: number;
   layout: MediaLayout;
   captionLayout?: CaptionLayout;
-  mediaBlob: Blob;
+  mediaBlob?: Blob;
+  remoteVideo?: RemoteVideoRecipe;
   soundBlob?: Blob;
   layers?: SavedPingLayer[];
 }
+export interface RemoteVideoRecipe { url: string; start_ms: number; end_ms: number; volume: number; title?: string }
 
 export interface SavedPingSummary {
   id: string;
@@ -115,6 +117,7 @@ export async function getSavedPing(id: string): Promise<SavedPingRecord | null> 
 export async function savePing(input: {
   name: string;
   file?: File | null;
+  remoteVideo?: RemoteVideoRecipe;
   layers?: SavePingLayerInput[];
   soundFile?: File | null;
   caption: string;
@@ -128,7 +131,7 @@ export async function savePing(input: {
 }): Promise<string> {
   const layers = input.layers ?? [];
   const primary = layers[0]?.file ?? input.file;
-  if (!primary) throw new Error("Choose a file to save");
+  if (!primary && !input.remoteVideo) throw new Error("Choose a file to save");
 
   const storedLayers: SavedPingLayer[] | undefined =
     layers.length > 0
@@ -142,9 +145,9 @@ export async function savePing(input: {
         }))
       : undefined;
 
-  const mediaType = layers.length > 0 ? "image" : mediaTypeOf(primary);
+  const mediaType = input.remoteVideo ? "video" : layers.length > 0 ? "image" : mediaTypeOf(primary!);
   const mediaFileName =
-    layers.length > 1 ? `${layers.length} layers` : primary.name;
+    input.remoteVideo ? input.remoteVideo.title || "TikTok video" : layers.length > 1 ? `${layers.length} layers` : primary!.name;
 
   const record: SavedPingRecord = {
     id: crypto.randomUUID(),
@@ -152,7 +155,7 @@ export async function savePing(input: {
     createdAt: Date.now(),
     mediaType,
     mediaFileName,
-    mediaMime: primary.type,
+    mediaMime: primary?.type || "video/mp4",
     soundFileName: input.soundFile?.name,
     soundMime: input.soundFile?.type,
     caption: input.caption,
@@ -163,7 +166,8 @@ export async function savePing(input: {
     fadeOutMs: input.fadeOutMs ?? DEFAULT_FADE_OUT_MS,
     layout: input.layout,
     captionLayout: input.captionLayout,
-    mediaBlob: cloneBlob(primary, primary.type),
+    mediaBlob: input.remoteVideo ? undefined : cloneBlob(primary!, primary!.type),
+    remoteVideo: input.remoteVideo,
     soundBlob: input.soundFile ? cloneBlob(input.soundFile, input.soundFile.type) : undefined,
     layers: storedLayers,
   };

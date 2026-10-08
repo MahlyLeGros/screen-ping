@@ -74,6 +74,23 @@ def prepared_job(db):
     return job
 
 
+def test_idle_import_expires_after_five_minutes_and_exports_recipe(db):
+    job = prepared_job(db); job.platform = "tiktok"; job.url = "https://vm.tiktok.com/ABC/"
+    result = imports.import_status(job.id, db.get(User, "owner"), db)
+    assert result["source_url"] == job.url
+    remaining = job.expires_at.replace(tzinfo=utcnow().tzinfo) - utcnow()
+    assert 295 <= remaining.total_seconds() <= 300
+    job.expires_at = utcnow() - timedelta(seconds=1); db.commit()
+    with pytest.raises(HTTPException) as error: imports.import_status(job.id, db.get(User, "owner"), db)
+    assert error.value.status_code == 410
+
+
+def test_work_in_progress_does_not_expire_while_queued(db):
+    job = prepared_job(db); job.status = "queued"; job.expires_at = utcnow() - timedelta(minutes=1); db.commit()
+    assert imports.import_status(job.id, db.get(User, "owner"), db)["status"] == "queued"
+    assert imports.job_response(job)["source_url"] is None
+
+
 def test_replacing_idle_drafts_frees_user_quota(db):
     drafts = [prepared_job(db) for _ in range(5)]
     drafts[0].status = "ready"
@@ -173,7 +190,7 @@ def test_activity_refreshes_new_source_only(db):
     previous = utcnow() + timedelta(seconds=10)
     job.expires_at = previous; db.commit()
     imports.import_status(job.id, db.get(User, "owner"), db)
-    assert job.expires_at.replace(tzinfo=previous.tzinfo) > previous + timedelta(minutes=25)
+    assert previous + timedelta(minutes=4) < job.expires_at.replace(tzinfo=previous.tzinfo) < previous + timedelta(minutes=5)
 
 
 def test_legacy_jobs_count_against_disk_budget(db):

@@ -57,8 +57,14 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
   }, [playing, start, end]);
   useEffect(() => {
     // Keep the private source alive only while the user is choosing an excerpt.
-    const timer = window.setInterval(() => { void api.importStatus(job.id).catch(() => {}); }, 60000);
-    return () => window.clearInterval(timer);
+    let lastTouch = Date.now();
+    const touch = () => {
+      if (Date.now() - lastTouch < 60000) return;
+      lastTouch = Date.now(); void api.importStatus(job.id).catch(() => {});
+    };
+    const element = dialog.current;
+    element?.addEventListener("pointerdown", touch); element?.addEventListener("keydown", touch);
+    return () => { element?.removeEventListener("pointerdown", touch); element?.removeEventListener("keydown", touch); };
   }, [job.id]);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;

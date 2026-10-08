@@ -1,7 +1,7 @@
 from datetime import timedelta
 import threading
 from pathlib import Path
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from fastapi import APIRouter, Depends, HTTPException, Form, File, UploadFile
 from pydantic import BaseModel, Field
@@ -41,7 +41,7 @@ def platform_enabled(platform):
 
 def reserve_capacity(db, user_id, reservation):
     active = db.query(MediaImport).filter(MediaImport.status.in_(("queued", "fetching", "optimizing", "queued_clip", "cropping", "uploading")))
-    stored = db.query(MediaImport).filter(MediaImport.status.notin_(("cancelled", "failed")), MediaImport.expires_at > utcnow())
+    stored = db.query(MediaImport).filter(MediaImport.status.notin_(("cancelled", "failed")), or_(MediaImport.expires_at > utcnow(), MediaImport.status.in_(("queued", "fetching", "optimizing", "queued_clip", "cropping", "uploading"))))
     # Legacy jobs lack a reservation column value; count their maximum scratch
     # footprint too while they complete under the compatibility path.
     reserved = stored.with_entities(func.coalesce(func.sum(func.coalesce(MediaImport.reserved_bytes, 3 * FINAL_BYTES)), 0)).scalar()
@@ -82,7 +82,7 @@ def owned_job(db: Session, user: User, job_id: str) -> MediaImport:
     if not job or job.user_id != user.id:
         raise HTTPException(404, "Import not found")
     expiry = job.expires_at
-    if expiry.replace(tzinfo=utcnow().tzinfo) <= utcnow():
+    if job.status in ("ready", "awaiting_selection", "failed", "cancelled") and expiry.replace(tzinfo=utcnow().tzinfo) <= utcnow():
         raise HTTPException(410, "Import expired; paste the link again")
     return job
 
@@ -90,7 +90,8 @@ def owned_job(db: Session, user: User, job_id: str) -> MediaImport:
 def job_response(job: MediaImport):
     return {"id": job.id, "status": job.status, "error": job.error, "duration_ms": job.duration_ms, "progress_percent": job.progress_percent,
             "media_url": sign_media_url(job.storage_path, job.user_id, [job.storage_path]) if job.status == "ready" else None,
-            "platform": job.platform or "tiktok", "title": job.title,
+            "platform": job.platform or "tiktok", "title": job.title, "source_url": job.url if job.platform != "local" else None,
+            "expires_at": job.expires_at.isoformat(),
             "source_duration_ms": job.source_duration_ms, "start_ms": job.start_ms, "end_ms": job.end_ms, "volume": job.volume if job.volume is not None else 1.0,
             "preview_url": sign_media_url(job.source_path, job.user_id, [job.source_path]) if job.source_duration_ms and job.source_path else None}
 
@@ -190,7 +191,7 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
         job.start_ms = body.start_ms; job.end_ms = body.end_ms
         job.volume = body.volume
         job.status = "queued_clip"; job.error = None; job.progress_percent = 0
-        job.expires_at = utcnow() + timedelta(minutes=30)
+        job.expires_at = utcnow() + timedelta(minutes=15)
         db.commit()
     return job_response(job)
 
@@ -199,7 +200,7 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
 def import_status(job_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     job = owned_job(db, user, job_id)
     if job.platform and job.status not in ("failed", "cancelled"):
-        job.expires_at = utcnow() + timedelta(minutes=30)
+        job.expires_at = utcnow() + timedelta(minutes=5 if job.status in ("ready", "awaiting_selection") else 15)
         db.commit()
     return job_response(job)
 
@@ -234,6 +235,7 @@ async def send_import(job_id: str, receiver_ids: str = Form(...), caption: str |
     if sound_file and sound_file.filename:
         _, _, audio_url = await save_upload(sound_file, force_audio=True)
     uploads = []
+    job.expires_at = utcnow() + timedelta(minutes=5)
     for receiver in ids:
         message = MediaMessage(sender_id=user.id, receiver_id=receiver, media_type=MediaType.video,
                                storage_path=job.storage_path, media_duration_ms=job.duration_ms,

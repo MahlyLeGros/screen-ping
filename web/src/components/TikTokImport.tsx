@@ -3,8 +3,8 @@ import { api, type MediaImportJob } from "../lib/api";
 import VideoClipDialog from "./VideoClipDialog";
 import { useSmoothedProgress } from "../lib/useSmoothedProgress";
 
-export default function TikTokImport({ job, onChange, onReplace, clipping = false }: {
-  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; onReplace: () => void; clipping?: boolean;
+export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, disabled = false, clipping = false }: {
+  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; onReplace: () => void; onPrepareEdit: (job: MediaImportJob) => Promise<MediaImportJob>; disabled?: boolean; clipping?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
     if (!job) { openedJob.current = null; setClipOpen(false); }
   }, [job?.id, job?.status, job?.source_duration_ms]);
   useEffect(() => {
-    if (!job || !active) return;
+    if (!job || !active || disabled) return;
     let disposed = false;
     const timer = window.setInterval(() => {
       void api.importStatus(job.id).then(next => {
@@ -32,7 +32,14 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
       }).catch(err => { if (!disposed) setError(err instanceof Error ? err.message : "Connection interrupted; retrying…"); });
     }, 1200);
     return () => { disposed = true; window.clearInterval(timer); };
-  }, [job?.id, active]);
+  }, [job?.id, active, disabled]);
+  async function edit() {
+    if (!job || busy || disabled) return;
+    setBusy(true); setError("");
+    try { const fresh = await onPrepareEdit(job); openedJob.current = fresh.id; setClipOpen(true); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not prepare video"); }
+    finally { setBusy(false); }
+  }
   async function start() {
     setBusy(true); setError("");
     try {
@@ -51,7 +58,7 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
         className="field-input min-w-0 flex-1" placeholder="Paste a TikTok video link" value={url}
         onChange={event => setUrl(event.target.value)}
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
-      <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active} onClick={() => void start()}>Import</button>
+      <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active || disabled} onClick={() => void start()}>Import</button>
     </div>
     {job?.status === "optimizing" && !error && !job.error && <div className="flex items-center gap-2"><div className="video-import-progress" role="progressbar" aria-label="Optimizing video" aria-valuemin={0} aria-valuemax={100} aria-valuenow={job.progress_percent ?? undefined}><span style={{ width: `${displayedProgress}%` }} /></div><span className="shrink-0 text-xs tabular-nums text-slate-400">{job.progress_percent == null ? "…" : `${Math.floor(displayedProgress)}%`}</span></div>}
     {(error || job?.error || (job && job.status !== "ready" && job.status !== "awaiting_selection" && job.status !== "optimizing")) && <p role="status" aria-live="polite" className="text-xs text-slate-400">
@@ -61,7 +68,7 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
       <span className="field-label">File</span>
       <div className="upload-zone px-2.5 py-2 pr-[6.5rem]">
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 bg-transparent text-left"
-          aria-label="Replace selected media" disabled={busy} onClick={onReplace}>
+          aria-label="Replace selected media" disabled={busy || disabled} onClick={onReplace}>
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-sm text-slate-400">{job.status === "awaiting_selection" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg> : "✓"}</span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium text-white" title={job.status === "awaiting_selection" ? undefined : job.title || videoName}>{job.status === "awaiting_selection" ? "Trim video" : job.title || videoName}</span>
@@ -69,9 +76,9 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
           </span>
         </button>
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
-        {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Trim video" title="Trim video" disabled={busy}
+        {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Trim video" title="Trim video" disabled={busy || disabled}
           className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
-          onClick={() => setClipOpen(true)}>
+          onClick={() => void edit()}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <g stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.5 3.8H7.2a4.9 4.9 0 0 0-4.9 4.9v9a4.9 4.9 0 0 0 4.9 4.9h9a4.9 4.9 0 0 0 4.9-4.9v-4" />
@@ -80,9 +87,9 @@ export default function TikTokImport({ job, onChange, onReplace, clipping = fals
             </g>
           </svg>
         </button>}
-        <button type="button" aria-label="Remove imported video" title="Remove imported video" disabled={busy}
+        <button type="button" aria-label="Remove imported video" title="Remove imported video" disabled={busy || disabled}
           className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-red-400"
-          onClick={() => { setBusy(true); void api.cancelImport(job.id).then(() => onChange(null)).catch(err => setError(String(err))).finally(() => setBusy(false)); }}>
+          onClick={() => { setBusy(true); void api.cancelImport(job.id).then(() => onChange(null)).catch(err => { if (/Import (expired|not found)/i.test(String(err))) onChange(null); else setError(String(err)); }).finally(() => setBusy(false)); }}>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" /></svg>
         </button>
         </div>

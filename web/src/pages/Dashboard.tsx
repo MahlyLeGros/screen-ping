@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState, type DragEvent, ty
 import ComposeColumnGlows from "../components/ComposeColumnGlows";
 import { WidgetLayoutProvider, WidgetPane, MovableWidget, WidgetGrip } from "../components/WidgetLayout";
 import TikTokImport from "../components/TikTokImport";
+import { restoreVideoImport, videoRecipe } from "../lib/restoreVideoImport";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { MediaImportJob } from "../lib/api";
 import { useDashboardChrome } from "../context/DashboardChromeContext";
@@ -338,6 +339,10 @@ export default function DashboardPage() {
   const widgetLayoutEnabled = useMediaQuery("(min-width: 1280px)");
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const replacementInputRef = useRef<HTMLInputElement>(null);
+  const retainedVideoRef = useRef<File | null>(null);
+  const importWorkRef = useRef(false);
+  const restoreAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => restoreAbortRef.current?.abort(), []);
   // Native details has an internal content box that is not a flex item.
   // Keep it on mobile only; desktop needs directly constrained flex children.
   const LibraryPanel = mobile ? "details" : "aside";
@@ -525,15 +530,16 @@ export default function DashboardPage() {
   const ingestMediaFiles = useCallback(
     async (files: File[]) => {
       if (!files.some(f => ["image", "video"].includes(guessMediaKind(f)))) return;
-      if (preparingVideo) {
+      if (preparingVideo || importWorkRef.current) {
         setStatus("Please wait for the current upload to finish");
         return;
       }
       if (importJob && !["failed", "cancelled"].includes(importJob.status)) {
         try { await api.cancelImport(importJob.id); }
-        catch (error) { setStatus(error instanceof Error ? error.message : "Could not replace the video"); return; }
+        catch (error) { if (!(error instanceof Error) || !/Import (expired|not found)/i.test(error.message)) { setStatus(error instanceof Error ? error.message : "Could not replace the video"); return; } }
       }
       const video = files.find((f) => guessMediaKind(f) === "video");
+      retainedVideoRef.current = video ?? null;
       setImportJob(null);
       if (video) {
         revokeLayerUrls(imageLayersRef.current);
@@ -772,8 +778,30 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, [tab]);
 
+  async function ensureFreshImport(previous: MediaImportJob): Promise<MediaImportJob> {
+    try {
+      const fresh = await api.importStatus(previous.id);
+      const next = previous.status === "awaiting_selection" && fresh.status === "ready"
+        ? { ...fresh, status: "awaiting_selection" as const, start_ms: previous.start_ms, end_ms: previous.end_ms, volume: previous.volume }
+        : fresh;
+      setImportJob(next); return next;
+    }
+    catch (error) {
+      if (!(error instanceof Error) || !/Import (expired|not found)/i.test(error.message)) throw error;
+      const remote = videoRecipe(previous);
+      const local = previous.platform === "local" ? retainedVideoRef.current : null;
+      if (!remote && !local) throw new Error("This video expired; please select the file again");
+      const recipe = remote ?? { url: "", start_ms: previous.start_ms ?? 0, end_ms: previous.end_ms ?? previous.duration_ms ?? 0, volume: previous.volume ?? 1 };
+      setStatus("Video expired — preparing it again…"); setPreparingVideo(true);
+      const controller = new AbortController(); restoreAbortRef.current = controller;
+      try { return await restoreVideoImport(recipe, setImportJob, local ?? undefined, controller.signal); }
+      finally { setPreparingVideo(false); }
+    }
+  }
+
   async function handleSend(e: FormEvent) {
     e.preventDefault();
+    if (importWorkRef.current || loading || preparingVideo) return;
     if (!hasSendMedia) {
       setStatus("Choose a file or load a saved ping");
       return;
@@ -785,6 +813,7 @@ export default function DashboardPage() {
     const uploadSound = overlaySound;
     const sendAudioDelay = hasSound ? audioDelayMs : 0;
     setLoading(true);
+    importWorkRef.current = true;
     setStatus("Uploading...");
     try {
       await reconnectSocket();
@@ -796,7 +825,8 @@ export default function DashboardPage() {
       const sendOverlayCaption = isVideo ? overlayCaption.trim() || undefined : undefined;
 
       if (importedVideo && importJob) {
-        uploads = await api.sendImport(importJob.id, receiverIds, duration, sendOverlayCaption, uploadSound);
+        const prepared = await ensureFreshImport(importJob);
+        uploads = await api.sendImport(prepared.id, receiverIds, duration, sendOverlayCaption, uploadSound);
       } else if (isLayerCompose) {
         const orderedLayers = sortLayersByZ(imageLayers);
         const onlyGif = orderedLayers.length === 1 && isGifFile(orderedLayers[0].file);
@@ -852,6 +882,7 @@ export default function DashboardPage() {
       setStatus(err instanceof Error ? err.message : "Send failed");
     } finally {
       setLoading(false);
+      importWorkRef.current = false;
     }
   }
 
@@ -876,9 +907,11 @@ export default function DashboardPage() {
     let uploadFile = file ?? soundFile;
     if (!hasLayers && !uploadFile && !importedVideo) return;
     try {
-      if (importedVideo && importJob?.media_url) {
+      const remoteVideo = importedVideo && importJob ? videoRecipe(importJob) : undefined;
+      if (importedVideo && importJob?.media_url && !remoteVideo) {
         // Download only on explicit local saving, never during a normal send.
-        const response = await fetch(apiUrl(importJob.media_url), { credentials: "include" });
+        const prepared = await ensureFreshImport(importJob);
+        const response = await fetch(apiUrl(prepared.media_url!), { credentials: "include" });
         if (!response.ok) throw new Error("Could not save the video; import it again");
         const name = (importJob.title || "Video excerpt").replace(/[\\/:*?"<>|]/g, "_");
         uploadFile = new File([await response.blob()], name + ".mp4", { type: "video/mp4" });
@@ -903,8 +936,9 @@ export default function DashboardPage() {
         });
       } else {
         await savePing({
-          name: saveName || uploadFile!.name,
+          name: saveName || remoteVideo?.title || (remoteVideo ? "TikTok video" : uploadFile!.name),
           file: uploadFile!,
+          remoteVideo,
           soundFile: overlaySound ?? null,
           caption: overlayCaption,
           duration,
@@ -926,6 +960,9 @@ export default function DashboardPage() {
   }
 
   async function loadSavedPing(id: string) {
+    if (importWorkRef.current || loading || preparingVideo) return;
+    importWorkRef.current = true;
+    try {
     const saved = await getSavedPing(id);
     if (!saved) return;
     if (importJob) await api.cancelImport(importJob.id).catch(() => undefined);
@@ -946,7 +983,15 @@ export default function DashboardPage() {
     let loadedVideo = false;
     let pendingCaptionLayers: EditorImageLayer[] | null = null;
 
-    if (saved.layers && saved.layers.length > 0) {
+    if (saved.remoteVideo) {
+      loadedVideo = true; setFile(null); setSoundFile(sound); retainedVideoRef.current = null;
+      setPreparingVideo(true);
+      setStatus("Downloading saved TikTok…");
+      const controller = new AbortController(); restoreAbortRef.current = controller;
+      try { await restoreVideoImport(saved.remoteVideo, setImportJob, undefined, controller.signal); }
+      catch (err) { setStatus(err instanceof Error ? err.message : "Could not reload TikTok"); return; }
+      finally { setPreparingVideo(false); }
+    } else if (saved.layers && saved.layers.length > 0) {
       const created: EditorImageLayer[] = [];
       for (let i = 0; i < saved.layers.length; i++) {
         const layer = saved.layers[i];
@@ -963,6 +1008,7 @@ export default function DashboardPage() {
       setFile(null);
       setSoundFile(sound);
     } else {
+      if (!saved.mediaBlob) { setStatus("This saved ping has no media; please import it again"); return; }
       const mediaFile = blobToFile(saved.mediaBlob, saved.mediaFileName, saved.mediaMime);
       if (saved.mediaType === "audio") {
         setFile(null);
@@ -970,6 +1016,7 @@ export default function DashboardPage() {
       } else if (saved.mediaType === "video") {
         loadedVideo = true;
         if (clippingEnabled) {
+          retainedVideoRef.current = mediaFile;
           setFile(null);
           setPreparingVideo(true);
           try { setImportJob(await api.uploadVideoSource(mediaFile)); }
@@ -1018,6 +1065,8 @@ export default function DashboardPage() {
     setLayout(clampLayout(saved.layout ?? DEFAULT_LAYOUT));
     setTab("send");
     setStatus(`Loaded "${saved.name}"`);
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not load saved ping"); }
+    finally { importWorkRef.current = false; }
   }
 
   async function removeSavedPing(id: string) {
@@ -1276,7 +1325,7 @@ export default function DashboardPage() {
                   event.target.value = "";
                   if (files.length) ingestDroppedFiles(files);
                 }} />
-                <TikTokImport job={importJob} clipping={clippingEnabled} onReplace={() => replacementInputRef.current?.click()} onChange={next => {
+                <TikTokImport job={importJob} clipping={clippingEnabled} disabled={loading || preparingVideo} onPrepareEdit={ensureFreshImport} onReplace={() => replacementInputRef.current?.click()} onChange={next => {
                   const firstReady = next?.status === "ready" && importJob?.status !== "ready";
                   if (next && next.id !== importJob?.id) setLayout(DEFAULT_LAYOUT);
                   setImportJob(next);

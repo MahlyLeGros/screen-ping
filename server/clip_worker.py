@@ -100,7 +100,7 @@ def process_job(job_id):
                 job.status = "awaiting_selection"
             source_file = resolve_upload_file(job.source_path)
             job.reserved_bytes = (source_file.stat().st_size if source_file else 0) + 3 * FINAL_BYTES
-            job.expires_at = utcnow() + timedelta(minutes=30)
+            job.expires_at = utcnow() + timedelta(minutes=5)
             job.error = None
             job.progress_percent = 100
             db.commit()
@@ -123,7 +123,7 @@ def run():
         db.commit()
     while True:
         with SessionLocal() as db:
-            for job in db.query(MediaImport).filter(MediaImport.expires_at < utcnow()).with_for_update().all():
+            for job in db.query(MediaImport).filter(MediaImport.expires_at < utcnow(), MediaImport.status.in_(("ready", "awaiting_selection", "failed", "cancelled"))).with_for_update().all():
                 clean_job(db, job); db.delete(job)
             for job in db.query(MediaImport).filter(MediaImport.status.in_(("cancelled", "failed"))).with_for_update().all():
                 clean_job(db, job)
