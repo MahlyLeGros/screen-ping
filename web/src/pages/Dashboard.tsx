@@ -333,6 +333,7 @@ export default function DashboardPage() {
   const { setChrome } = useDashboardChrome();
   const [tab, setTab] = useState<Tab>("send");
   const mobile = useMediaQuery("(max-width: 767px)");
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   // Native details has an internal content box that is not a flex item.
   // Keep it on mobile only; desktop needs directly constrained flex children.
   const LibraryPanel = mobile ? "details" : "aside";
@@ -1239,6 +1240,17 @@ export default function DashboardPage() {
                   multiple
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
                 />
+                {mobile && <>
+                  <button type="button" className="btn-secondary w-full" onClick={() => cameraInputRef.current?.click()}>
+                    Take a photo
+                  </button>
+                  <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="sr-only"
+                    aria-label="Take a photo" onChange={event => {
+                      const photos = Array.from(event.target.files || []);
+                      if (photos.length) { setImportJob(null); ingestDroppedFiles(photos); }
+                      event.target.value = "";
+                    }} />
+                </>}
                 {isLayerCompose && (
                   <ComposeLayersPanel
                     layers={imageLayers}
