@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { defaultWidgetLayout, moveWidget, parseWidgetLayout, widgetStorageKey, WIDGET_IDS } from "./widgetLayout";
+import { defaultWidgetLayout, moveWidget, parseWidgetLayout, resizeWidget, widgetStorageKey, WIDGET_IDS } from "./widgetLayout";
 describe("widget layout", () => {
+  it("persists bounded heights without losing ordering or legacy layouts", () => {
+    const layout = resizeWidget(defaultWidgetLayout(), "saved", 310);
+    expect(parseWidgetLayout(JSON.stringify(layout))).toEqual(layout);
+    expect(moveWidget(layout, "saved", "right", 0).heights?.saved).toBe(310);
+    expect(resizeWidget(layout, "saved", -10).heights?.saved).toBe(120);
+    expect(resizeWidget(layout, "media", 5000).heights?.media).toBe(2000);
+    expect(resizeWidget(layout, "media", NaN)).toBe(layout);
+    expect(parseWidgetLayout(JSON.stringify({ ...layout, heights: { saved: "bad", recent: 250, unknown: 400 } })).heights).toEqual({ recent: 250 });
+    expect(defaultWidgetLayout().heights).toBeUndefined();
+  });
   it("validates storage and empty panels", () => {
     expect(parseWidgetLayout(JSON.stringify({ version: 1, left: [], right: [...WIDGET_IDS] })).right).toEqual(WIDGET_IDS);
     for (const value of [null, "invalid", '{}', '{"version":2}', '{"version":1,"left":["saved","saved"],"right":["media","timing"]}']) expect(parseWidgetLayout(value)).toEqual(defaultWidgetLayout());

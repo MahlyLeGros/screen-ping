@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import ComposeColumnGlows from "../components/ComposeColumnGlows";
-import { WidgetLayoutProvider, WidgetPane, MovableWidget, WidgetGrip, WidgetReset } from "../components/WidgetLayout";
+import { WidgetLayoutProvider, WidgetPane, MovableWidget, WidgetGrip } from "../components/WidgetLayout";
 import TikTokImport from "../components/TikTokImport";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { MediaImportJob } from "../lib/api";
@@ -1465,7 +1465,6 @@ export default function DashboardPage() {
               </TimingPanel>
               </MovableWidget>
               </WidgetPane>
-              <WidgetReset />
             </aside>
             <div className="compose-mobile-send">
               <button type="submit" disabled={!canSend} className="btn-primary w-full">

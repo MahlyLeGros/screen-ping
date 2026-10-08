@@ -1845,11 +1845,17 @@
 @media (min-width: 1280px) {
   .widget-pane { position: relative; display: flex !important; flex-direction: column; gap: 12px; overflow-y: auto !important; overflow-x: hidden; min-height: 0; height: 100%; }
   .widget-pane > * { margin-top: 0 !important; margin-bottom: 0 !important; }
-  .widget-pane .widget-host { display: flex; flex-direction: column; min-width: 0; flex: 0 0 auto; }
+  .widget-pane .widget-host { position: relative; display: flex; flex-direction: column; min-width: 0; flex: 0 0 auto; }
   .widget-pane .widget-host--saved, .widget-pane .widget-host--recent { flex: 1 0 180px; min-height: 180px; }
   .widget-host > section { margin: 0; }
   .widget-host--saved > section, .widget-host--recent > section { flex: 1 1 0%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .widget-host .compose-side-panel-body, .widget-host .compose-side-saved-list, .widget-host .compose-side-recent-list { min-height: 0; flex: 1 1 0%; overflow-y: auto; }
+  .widget-pane .widget-host--resized { flex: 0 0 var(--widget-height); height: var(--widget-height); min-height: 0; }
+  .widget-host--resized > section { height: 100%; min-height: 0; overflow-y: auto; }
+  .widget-resize-handle { position: absolute; left: 10px; right: 10px; bottom: -4px; height: 10px; z-index: 4; padding: 0; border: 0; background: transparent; cursor: ns-resize; touch-action: none; }
+  .widget-resize-handle::after { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 2px; border-radius: 2px; background: transparent; transition: background .15s; }
+  .widget-resize-handle:hover::after, .widget-resize-handle:focus-visible::after { background: #a78bfa; }
+  .widget-resize-handle:focus-visible { outline: 1px solid #a78bfa; border-radius: 4px; }
   .widget-host--placeholder { flex: 0 0 auto !important; min-height: 0 !important; border-radius: 12px; background: rgba(167,139,250,.06); outline: 1px dashed rgba(167,139,250,.5); outline-offset: -1px; }
   .widget-host--placeholder > * { visibility: hidden; }
   .widget-pane[data-empty="true"]::after { content: "Drop a widget here"; display: flex; flex: 1; min-height: 140px; align-items: center; justify-content: center; color: #64748b; font-size: 12px; border: 1px dashed #30303d; border-radius: 12px; }

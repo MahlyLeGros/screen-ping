@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import AccessibleDialog from "./AccessibleDialog";
-import { defaultWidgetLayout, moveWidget, parseWidgetLayout, widgetStorageKey, type WidgetId, type WidgetLayout, type WidgetSide } from "../lib/widgetLayout";
+import { defaultWidgetLayout, moveWidget, parseWidgetLayout, resizeWidget, widgetStorageKey, type WidgetId, type WidgetLayout, type WidgetSide } from "../lib/widgetLayout";
 
 const LABELS: Record<WidgetId, string> = { saved: "Saved pings", recent: "Recent sends", media: "Media", timing: "Caption & timing" };
 interface Entry { host: HTMLDivElement; anchor: HTMLSpanElement }
@@ -11,7 +10,8 @@ interface Context {
   pane: (side: WidgetSide, element: HTMLDivElement | null) => void;
   pointer: (id: WidgetId, event: ReactPointerEvent<HTMLButtonElement>) => void;
   keyboard: (id: WidgetId, event: ReactKeyboardEvent<HTMLButtonElement>) => void;
-  reset: () => void;
+  resize: (id: WidgetId, event: ReactPointerEvent<HTMLButtonElement>) => void;
+  resizeKey: (id: WidgetId, event: ReactKeyboardEvent<HTMLButtonElement>) => void;
 }
 const Widgets = createContext<Context | null>(null);
 
@@ -24,7 +24,6 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
   const [draft, setDraft] = useState<WidgetLayout | null>(null);
   const [dragging, setDragging] = useState<WidgetId | null>(null);
   const [announcement, setAnnouncement] = useState("");
-  const [resetOpen, setResetOpen] = useState(false);
   const layoutRef = useRef(layout); layoutRef.current = layout;
   const draftRef = useRef(draft); draftRef.current = draft;
   const keyboardId = useRef<WidgetId | null>(null);
@@ -54,9 +53,15 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
     if (element) panes.current[side] = element; else delete panes.current[side];
   }, []);
   useLayoutEffect(() => {
-    const focusedGrip = document.activeElement instanceof HTMLButtonElement && document.activeElement.classList.contains("widget-grip") ? document.activeElement : null;
+    const focusedGrip = document.activeElement instanceof HTMLButtonElement && document.activeElement.matches(".widget-grip, .widget-resize-handle") ? document.activeElement : null;
     if (enabled) arrange(draft ?? layout); else restore();
-    for (const [id, { host }] of entries.current) host.classList.toggle("widget-host--placeholder", enabled && dragging === id && !keyboardId.current);
+    for (const [id, { host }] of entries.current) {
+      host.classList.toggle("widget-host--placeholder", enabled && dragging === id && !keyboardId.current);
+      const height = (draft ?? layout).heights?.[id];
+      host.classList.toggle("widget-host--resized", enabled && height !== undefined);
+      if (enabled && height !== undefined) host.style.setProperty("--widget-height", `${height}px`);
+      else host.style.removeProperty("--widget-height");
+    }
     if (enabled) focusedGrip?.focus({ preventScroll: true });
   }, [enabled, layout, draft, dragging, arrange, restore]);
   useEffect(() => {
@@ -153,6 +158,41 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
     document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", up);
     document.addEventListener("keydown", key); window.addEventListener("blur", cancel); document.documentElement.addEventListener("lostpointercapture", cancel);
   };
+  const resize = (id: WidgetId, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!enabled || !event.isPrimary || event.button !== 0 || keyboardId.current || cleanupRef.current) return;
+    event.preventDefault(); event.stopPropagation();
+    const host = entries.current.get(id)?.host; if (!host) return;
+    const initialHeight = host.getBoundingClientRect().height, originY = event.clientY, pointerId = event.pointerId;
+    const original = layoutRef.current; let next = original;
+    const oldCursor = document.body.style.cursor; document.body.style.cursor = "ns-resize";
+    document.documentElement.setPointerCapture(pointerId);
+    const move = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      ev.preventDefault(); next = resizeWidget(original, id, initialHeight + ev.clientY - originY); setDraft(next);
+    };
+    const cleanup = () => {
+      document.body.style.cursor = oldCursor;
+      document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up); document.removeEventListener("pointercancel", cancel);
+      document.removeEventListener("keydown", key); window.removeEventListener("blur", cancel);
+      document.documentElement.removeEventListener("lostpointercapture", cancel);
+      if (document.documentElement.hasPointerCapture(pointerId)) document.documentElement.releasePointerCapture(pointerId);
+      cleanupRef.current = null;
+    };
+    const finish = (save: boolean) => { cleanup(); setDraft(null); if (save) { commit(next); setAnnouncement(`${LABELS[id]} height ${next.heights?.[id] ?? Math.round(initialHeight)} pixels.`); } };
+    const up = (ev: PointerEvent) => { if (ev.pointerId === pointerId) { move(ev); finish(true); } };
+    const cancel = () => finish(false);
+    const key = (ev: KeyboardEvent) => { if (ev.key === "Escape") { ev.preventDefault(); cancel(); } };
+    cleanupRef.current = cleanup;
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up); document.addEventListener("pointercancel", cancel);
+    document.addEventListener("keydown", key); window.addEventListener("blur", cancel); document.documentElement.addEventListener("lostpointercapture", cancel);
+  };
+  const resizeKey = (id: WidgetId, event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (!enabled || !["ArrowUp", "ArrowDown"].includes(event.key) || cleanupRef.current) return;
+    event.preventDefault();
+    const height = entries.current.get(id)?.host.getBoundingClientRect().height; if (!height) return;
+    const next = resizeWidget(layoutRef.current, id, height + (event.key === "ArrowUp" ? -1 : 1) * (event.shiftKey ? 50 : 10));
+    commit(next); setAnnouncement(`${LABELS[id]} height ${next.heights?.[id]} pixels.`);
+  };
   const keyboard = (id: WidgetId, event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (!enabled) return;
     if (event.key === "Enter" || event.key === " ") {
@@ -172,14 +212,9 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
       requestAnimationFrame(() => entries.current.get(id)?.host.querySelector<HTMLButtonElement>(".widget-grip")?.focus());
     }
   };
-  return <Widgets.Provider value={{ enabled, register, pane, pointer, keyboard, reset: () => setResetOpen(true) }}>
+  return <Widgets.Provider value={{ enabled, register, pane, pointer, keyboard, resize, resizeKey }}>
     {children}
     <span className="sr-only" role="status" aria-live="polite">{announcement}</span>
-    <AccessibleDialog open={resetOpen} labelledBy="widget-reset-title" onClose={() => setResetOpen(false)}>
-      <h2 id="widget-reset-title" className="font-bold">Reset widget layout?</h2>
-      <p className="text-sm text-slate-300">Restore the original left and right panels. Your media and settings will be kept.</p>
-      <div className="flex justify-end gap-2"><button type="button" className="btn-secondary" onClick={() => setResetOpen(false)}>Cancel</button><button type="button" className="btn-primary" onClick={() => { commit(defaultWidgetLayout()); setResetOpen(false); }}>Reset layout</button></div>
-    </AccessibleDialog>
   </Widgets.Provider>;
 }
 
@@ -193,13 +228,9 @@ export function MovableWidget({ id, children }: { id: WidgetId; children: ReactN
   const anchor = useRef<HTMLSpanElement>(null);
   const [host] = useState(() => { const element = document.createElement("div"); element.className = `widget-host widget-host--${id}`; element.dataset.widgetId = id; return element; });
   useLayoutEffect(() => context.register(id, { host, anchor: anchor.current! }), [context.register, host, id]);
-  return <><span ref={anchor} className="widget-anchor" aria-hidden="true" />{createPortal(children, host, id)}</>;
+  return <><span ref={anchor} className="widget-anchor" aria-hidden="true" />{createPortal(<>{children}{context.enabled && <button type="button" className="widget-resize-handle" aria-label={`Resize ${LABELS[id]} widget height`} title="Drag to resize height; arrow keys for precision" onPointerDown={event => context.resize(id, event)} onKeyDown={event => context.resizeKey(id, event)} />}</>, host, id)}</>;
 }
 export function WidgetGrip({ id }: { id: WidgetId }) {
   const context = useContext(Widgets)!;
   return context.enabled ? <button type="button" className="widget-grip" aria-label={`Move ${LABELS[id]} widget`} title="Drag to move; Enter for keyboard controls" onPointerDown={event => context.pointer(id, event)} onKeyDown={event => context.keyboard(id, event)}><span /><span /><span /></button> : null;
-}
-export function WidgetReset() {
-  const context = useContext(Widgets)!;
-  return context.enabled ? <button type="button" className="widget-reset" onClick={context.reset}>Reset layout</button> : null;
 }
