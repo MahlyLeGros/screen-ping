@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useCallback, useEffect, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { EditorImageLayer } from "../lib/imageLayers";
 import { reorderLayersInPanel, sortLayersByZ } from "../lib/imageLayers";
 
@@ -79,12 +79,15 @@ function ComposeLayersPanel({
   const listRef = useRef<HTMLUListElement>(null);
   const layersRef = useRef(layers);
   const dragLayerIdRef = useRef<string | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => dragCleanupRef.current?.(), []);
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
 
   layersRef.current = layers;
-  const sortedLayers = sortLayersByZ(layers);
+  const previewLayers = draggingId && dropTargetId ? reorderLayersInPanel(layers, draggingId, dropTargetId) : layers;
+  const sortedLayers = sortLayersByZ(previewLayers);
   const displayLayers = [...sortedLayers].reverse();
 
   function setOpacity(id: string, opacity: number) {
@@ -147,43 +150,81 @@ function ComposeLayersPanel({
 
   const onGripPointerDown = useCallback(
     (layerId: string, e: ReactPointerEvent<HTMLButtonElement>) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || !e.isPrimary) return;
       e.preventDefault();
       e.stopPropagation();
 
       const grip = e.currentTarget;
-      grip.setPointerCapture(e.pointerId);
+      const row = grip.closest<HTMLElement>("[data-layer-id]");
+      const list = listRef.current;
+      if (!row || !list) return;
+      dragCleanupRef.current?.();
+      const rect = row.getBoundingClientRect();
+      const slots = Array.from(list.querySelectorAll<HTMLElement>("[data-layer-id]")).map(item => ({
+        id: item.dataset.layerId!, center: item.getBoundingClientRect().top + item.getBoundingClientRect().height / 2,
+      }));
+      const initialScroll = list.scrollTop;
+      const ghost = row.cloneNode(true) as HTMLElement;
+      ghost.className = "compose-layer-row compose-layer-row--floating";
+      ghost.removeAttribute("data-layer-id");
+      ghost.setAttribute("aria-hidden", "true");
+      ghost.setAttribute("inert", "");
+      Object.assign(ghost.style, { position: "fixed", left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px`, margin: "0", zIndex: "1000", pointerEvents: "none" });
+      document.body.appendChild(ghost);
+      const originX = e.clientX, originY = e.clientY;
+      const oldCursor = document.body.style.cursor;
+      document.body.style.cursor = "grabbing";
+      list.setPointerCapture(e.pointerId);
 
       dragLayerIdRef.current = layerId;
       setDraggingId(layerId);
       setDropTargetId(layerId);
 
       const pointerId = e.pointerId;
+      const targetAt = (x: number, y: number) => {
+        const bounds = list.getBoundingClientRect();
+        if (x < bounds.left || x > bounds.right || y < bounds.top || y > bounds.bottom) return null;
+        const scrollDelta = list.scrollTop - initialScroll;
+        return slots.reduce((nearest, slot) => Math.abs(slot.center - scrollDelta - y) < Math.abs(nearest.center - scrollDelta - y) ? slot : nearest).id;
+      };
 
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
         ev.preventDefault();
-        const over = layerIdFromPoint(ev.clientX, ev.clientY);
-        if (over) setDropTargetId(over);
+        ghost.style.transform = `translate3d(${ev.clientX - originX}px, ${ev.clientY - originY}px, 0)`;
+        const targetId = targetAt(ev.clientX, ev.clientY);
+        setDropTargetId(targetId ?? layerId);
       };
 
       const onUp = (ev: PointerEvent) => {
         if (ev.pointerId !== pointerId) return;
-        grip.removeEventListener("pointermove", onMove);
-        grip.removeEventListener("pointerup", onUp);
-        grip.removeEventListener("pointercancel", onUp);
-        if (grip.hasPointerCapture(pointerId)) {
-          grip.releasePointerCapture(pointerId);
-        }
-        const over = layerIdFromPoint(ev.clientX, ev.clientY);
-        finishDrag(dragLayerIdRef.current, over ?? dragLayerIdRef.current);
+        const over = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY) : null;
+        cleanup();
+        finishDrag(layerId, over);
       };
+      const cancel = () => { cleanup(); finishDrag(null, null); };
+      const onKey = (ev: KeyboardEvent) => { if (ev.key === "Escape") { ev.preventDefault(); cancel(); } };
+      const cleanup = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onUp);
+        document.removeEventListener("pointercancel", onUp);
+        list.removeEventListener("lostpointercapture", cancel);
+        document.removeEventListener("keydown", onKey);
+        window.removeEventListener("blur", cancel);
+        if (list.hasPointerCapture(pointerId)) list.releasePointerCapture(pointerId);
+        ghost.remove(); document.body.style.cursor = oldCursor;
+        dragCleanupRef.current = null;
+      };
+      dragCleanupRef.current = cleanup;
 
-      grip.addEventListener("pointermove", onMove);
-      grip.addEventListener("pointerup", onUp);
-      grip.addEventListener("pointercancel", onUp);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onUp);
+      document.addEventListener("pointercancel", onUp);
+      list.addEventListener("lostpointercapture", cancel);
+      document.addEventListener("keydown", onKey);
+      window.addEventListener("blur", cancel);
     },
-    [finishDrag, layerIdFromPoint],
+    [finishDrag],
   );
 
   return (
