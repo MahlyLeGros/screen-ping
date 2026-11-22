@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Screen Ping Proto",
+  "version": "0.1.0",
+  "identifier": "com.screenping.tauriproto",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "security": { "csp": null },
+    "windows": [
+      {
+        "label": "control",
+        "title": "Screen Ping - prototype Tauri",
+        "url": "control.html",
+        "width": 460,
+        "height": 560,
+        "resizable": true,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      },
+      {
+        "label": "overlay",
+        "title": "Screen Ping Overlay",
+        "url": "overlay.html",
+        "visible": false,
+        "transparent": true,
+        "decorations": false,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "focus": false,
+        "resizable": false,
+        "x": -32000,
+        "y": -32000,
+        "width": 1,
+        "height": 1,
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser" }
+    }
+  }
+}

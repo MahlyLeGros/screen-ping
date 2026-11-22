@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Screen Ping - prototype Tauri</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --fg: #1b1b1f; --muted: #666; --card: #f3f3f6; --accent: #6b4dff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #17171b; --fg: #eee; --muted: #9a9aa5; --card: #24242b; } }
+  body { margin: 0; padding: 18px; font: 14px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--fg); }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  p { margin: 0 0 12px; color: var(--muted); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  button { padding: 10px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 600; cursor: pointer; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: 8px; border-radius: 6px; border: 1px solid #8884; background: var(--card); color: var(--fg); }
+  label { display: flex; gap: 8px; align-items: center; margin: 8px 0 12px; }
+  #log { background: var(--card); border-radius: 8px; padding: 8px; height: 160px; overflow: auto; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Prototype overlay Tauri</h1>
+<p>Lance un ping, puis vérifie que les clics passent au travers, que le son sort et que tu ne perds pas le focus.</p>
+<div class="row">
+  <button data-kind="image">Image</button>
+  <button data-kind="video">Vidéo + son</button>
+  <button data-kind="audio">Son seul</button>
+  <button data-kind="image+audio">Image + son</button>
+</div>
+<input id="url" type="text" placeholder="Ou colle l'URL d'une vidéo / image / son (https://…)">
+<div class="row" style="margin-top:8px"><button id="sendUrl">Envoyer l'URL</button><span></span></div>
+<label><input id="delay" type="checkbox" checked> Attendre 5 s avant le ping (pour passer sur un jeu en plein écran)</label>
+<div id="log"></div>
+<script>
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+const log = (s) => { const el = document.getElementById("log"); el.textContent = `[${new Date().toLocaleTimeString()}] ${s}\n` + el.textContent; };
+
+const samples = {
+  "image": { kind: "image", url: "samples/image.png", duration_ms: 4000 },
+  "video": { kind: "video", url: "samples/video.mp4" },
+  "audio": { kind: "audio", url: "samples/son.mp3" },
+  "image+audio": { kind: "image", url: "samples/image.png", audio_url: "samples/son.mp3" },
+};
+
+function kindFromUrl(u) {
+  const ext = u.split("?")[0].split(".").pop().toLowerCase();
+  if (["mp4", "webm", "mov", "m4v"].includes(ext)) return "video";
+  if (["mp3", "wav", "ogg", "m4a", "aac"].includes(ext)) return "audio";
+  return "image";
+}
+
+async function send(ping) {
+  const wait = document.getElementById("delay").checked;
+  log(`ping ${ping.kind}${wait ? " dans 5 s" : ""}…`);
+  if (wait) await new Promise((r) => setTimeout(r, 5000));
+  try { await invoke("send_ping", { ping }); } catch (e) { log("erreur : " + e); }
+}
+
+document.querySelectorAll("button[data-kind]").forEach((b) => b.onclick = () => send(samples[b.dataset.kind]));
+document.getElementById("sendUrl").onclick = () => {
+  const url = document.getElementById("url").value.trim();
+  if (!url) return;
+  send({ kind: kindFromUrl(url), url, duration_ms: kindFromUrl(url) === "image" ? 4000 : null });
+};
+
+listen("ping-result", ({ payload: r }) => {
+  log(r.ok ? `OK ${r.kind} : affiché en ${r.loadMs} ms, son ${r.unmuted ? "actif" : "COUPÉ"}`
+           : `ÉCHEC ${r.kind} : ${r.error}`);
+});
+</script>
+</body>
+</html>

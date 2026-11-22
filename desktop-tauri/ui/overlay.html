@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Screen Ping Overlay</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+           opacity: 0; transition: opacity 250ms ease; }
+  #stage.on { opacity: 1; }
+  #stage img, #stage video { max-width: 60vw; max-height: 60vh; object-fit: contain;
+           border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<script>
+const { invoke } = window.__TAURI__.core;
+const { listen, emitTo } = window.__TAURI__.event;
+const stage = document.getElementById("stage");
+let current = 0;
+
+function report(r) { emitTo("control", "ping-result", r).catch(() => {}); }
+
+function preload(el) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(false), 12000);
+    const ok = () => { clearTimeout(t); resolve(true); };
+    if (el.tagName === "IMG") { el.onload = ok; el.onerror = () => { clearTimeout(t); resolve(false); }; return; }
+    el.preload = "auto";
+    el.oncanplay = ok;
+    el.onerror = () => { clearTimeout(t); resolve(false); };
+    el.load();
+  });
+}
+
+async function play(media) {
+  media.muted = false;
+  media.volume = 1;
+  try { await media.play(); return { ok: true, muted: media.muted }; }
+  catch (e) { return { ok: false, error: String(e && e.name || e) }; }
+}
+
+listen("ping", async ({ payload: p }) => {
+  const id = ++current;
+  stage.classList.remove("on");
+  stage.replaceChildren();
+  const t0 = performance.now();
+
+  let visual = null, sound = null;
+  if (p.kind === "image") { visual = new Image(); visual.src = p.url; }
+  if (p.kind === "video") { visual = document.createElement("video"); visual.src = p.url; visual.playsInline = true; }
+  if (p.kind === "audio") { sound = new Audio(p.url); }
+  if (p.audio_url) { sound = new Audio(p.audio_url); }
+
+  const loaded = (await Promise.all([visual, sound].filter(Boolean).map(preload))).every(Boolean);
+  if (id !== current) return;
+  if (!loaded) { report({ kind: p.kind, ok: false, error: "chargement impossible" }); return; }
+
+  if (visual) stage.appendChild(visual);
+  await invoke("show_overlay");
+  requestAnimationFrame(() => stage.classList.add("on"));
+
+  const results = [];
+  if (visual && visual.tagName === "VIDEO") results.push(await play(visual));
+  if (sound) results.push(await play(sound));
+  const failed = results.find((r) => !r.ok);
+  report({ kind: p.kind, ok: !failed, error: failed && failed.error,
+           unmuted: results.every((r) => r.ok && !r.muted), loadMs: Math.round(performance.now() - t0) });
+
+  const media = (visual && visual.tagName === "VIDEO") ? visual : sound;
+  await new Promise((resolve) => {
+    if (media && !p.duration_ms) { media.onended = resolve; media.onerror = resolve; }
+    setTimeout(resolve, p.duration_ms || 20000);
+  });
+  if (id !== current) return;
+  stage.classList.remove("on");
+  await new Promise((r) => setTimeout(r, 260));
+  if (id !== current) return;
+  stage.querySelectorAll("video,audio").forEach((m) => m.pause());
+  if (sound) sound.pause();
+  stage.replaceChildren();
+  await invoke("hide_overlay");
+});
+</script>
+</body>
+</html>
