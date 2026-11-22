@@ -34,12 +34,18 @@ pub fn make_tool_window(hwnd: HWND) {
     }
 }
 
+/// Show without focus and raise to the top of the top-most band
+/// (Electron 1.0.72: showInactive + setAlwaysOnTop toggle + moveTop).
 pub fn show_topmost_no_activate(hwnd: HWND) {
+    let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE;
     unsafe {
         if !IsWindowVisible(hwnd).as_bool() {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            // A freshly shown window can land behind fullscreen apps despite
+            // its old top-most flag: drop and re-apply it.
+            let _ = SetWindowPos(hwnd, Some(HWND_NOTOPMOST), 0, 0, 0, 0, flags);
         }
-        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 0, 0, flags);
     }
 }
 

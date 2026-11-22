@@ -16,14 +16,27 @@
     if (T()) go();
     else window.addEventListener("DOMContentLoaded", go, { once: true });
   };
-  // Events are targeted at this window only.
+  // Events are targeted at this window only. Returns an unsubscribe function.
   const on = (channel, cb) => {
-    const attach = () => T().webviewWindow.getCurrentWebviewWindow().listen(channel, (e) => cb(e.payload));
+    let unlisten = null;
+    let stopped = false;
+    const attach = () =>
+      T().webviewWindow.getCurrentWebviewWindow().listen(channel, (e) => cb(e.payload)).then((f) => {
+        if (stopped) f();
+        else unlisten = f;
+      });
     if (T()) attach();
     else window.addEventListener("DOMContentLoaded", attach, { once: true });
+    return () => {
+      stopped = true;
+      if (unlisten) unlisten();
+    };
   };
 
   window.electronAPI = {
+    getReceiveVolume: () =>
+      T().core.invoke("ipc_invoke", { channel: "overlay:get-volume", payload: null }).catch(() => 1),
+    onReceiveVolume: (cb) => on("overlay:volume", cb),
     getSavedLogin: () => invoke("auth:get-saved-login"),
     login: (username, password, remember = true) => invoke("auth:login", { username, password, remember }),
     browserLogin: (mode, remember = true) => invoke("auth:browser-login", { mode, remember }),

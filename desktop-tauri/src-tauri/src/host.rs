@@ -165,9 +165,10 @@ impl OverlayHost for Host {
 
     fn play_hidden_audio(&self, url: &str, delay_ms: u64) {
         let url = serde_json::to_string(url).unwrap_or_else(|_| "\"\"".into());
+        let volume = self.store.get().receive_volume.clamp(0.0, 1.0);
         self.audio_eval(&format!(
             "(()=>{{document.querySelectorAll('audio').forEach((a)=>{{a.pause();a.remove();}});\
-             const a=new Audio({url});a.preload='auto';(document.body||document.documentElement).appendChild(a);\
+             const a=new Audio({url});a.preload='auto';a.volume={volume};(document.body||document.documentElement).appendChild(a);\
              setTimeout(()=>{{a.play().catch(()=>{{}});}},{delay_ms});}})()"
         ));
     }

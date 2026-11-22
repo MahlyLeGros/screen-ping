@@ -38,6 +38,9 @@ pub async fn ipc_invoke(
     let app = state.inner().clone();
     let err = |e: screenping_core::ApiError| e.message;
     let label = window.label().to_string();
+    if label == OVERLAY && channel == "overlay:get-volume" {
+        return Ok(json!(app.store.get().receive_volume));
+    }
     let from_ui = label == LOGIN || label == MAIN || label == MENU;
     if !from_ui {
         return Err("Not allowed from this window".into());

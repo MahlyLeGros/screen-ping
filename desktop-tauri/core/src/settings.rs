@@ -14,6 +14,8 @@ pub struct Settings {
     pub refresh_token: Option<String>,
     pub server_url: String,
     pub paused: bool,
+    /// 0..=1, applied to pings in the overlay.
+    pub receive_volume: f64,
     pub online: bool,
     pub overlay_display_id: Option<u32>,
     pub saved_username: Option<String>,
@@ -31,6 +33,7 @@ impl Default for Settings {
             refresh_token: None,
             server_url: PRODUCTION_SERVER_URL.to_string(),
             paused: false,
+            receive_volume: 1.0,
             online: true,
             overlay_display_id: None,
             saved_username: None,

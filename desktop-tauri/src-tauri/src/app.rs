@@ -507,6 +507,7 @@ impl App {
             "connected": self.connected.load(Ordering::SeqCst),
             "online": s.online,
             "paused": s.paused,
+            "receiveVolume": s.receive_volume,
             "launchAtLogin": s.launch_at_login,
             "alwaysOnTop": s.always_on_top,
             "compact": s.compact,
@@ -570,6 +571,8 @@ impl App {
 
     pub fn start_app(self: &Arc<Self>) {
         self.handling_expiry.store(false, Ordering::SeqCst);
+        // The tray now has one Online switch; don't keep a hidden legacy pause.
+        self.store.update(|s| s.paused = false);
         if self.store.access_token().is_some() && !self.store.get().online {
             self.store.update(|s| s.online = true);
         }
@@ -631,8 +634,19 @@ impl App {
     pub fn apply_setting(self: &Arc<Self>, key: &str, value: &Value) {
         let b = value.as_bool().unwrap_or(false);
         match key {
+            "receiveVolume" => {
+                let Some(v) = value.as_f64().filter(|v| v.is_finite()) else { return };
+                let v = v.clamp(0.0, 1.0);
+                self.store.update(|s| s.receive_volume = v);
+                let _ = self.handle.emit_to(OVERLAY, "overlay:volume", v);
+            }
             "online" => {
-                self.store.update(|s| s.online = b);
+                self.store.update(|s| {
+                    s.online = b;
+                    if b {
+                        s.paused = false;
+                    }
+                });
                 self.reconnect_socket();
             }
             "paused" => self.store.update(|s| s.paused = b),
