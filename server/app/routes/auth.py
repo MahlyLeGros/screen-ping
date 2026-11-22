@@ -338,7 +338,8 @@ def logout(request: Request, response: Response, body: RefreshRequest | None = N
 
 
 @router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_current_user)):
+def me(response: Response, current_user: User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store, max-age=0"
     return _user_response(current_user)
 
 

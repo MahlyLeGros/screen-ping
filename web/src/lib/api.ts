@@ -494,7 +494,7 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ current_password: currentPassword }),
     }),
-  me: () => request<User>("/api/auth/me"),
+  me: () => request<User>("/api/auth/me", { cache: "no-store" }),
   logout: () =>
     publicRequest<{ ok: boolean; message: string }>("/api/auth/logout", {
       method: "POST",
