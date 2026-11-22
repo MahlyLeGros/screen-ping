@@ -1,4 +1,8 @@
 #Requires -Version 5.1
+# Publish the desktop app (Tauri, desktop-tauri/) as the next update.
+#   publish-desktop.bat                      build here (needs Rust), then publish
+#   publish-desktop.bat <setup.exe|folder>   publish an installer built by CI
+param([string]$Installer)
 $ErrorActionPreference = "Stop"
 
 $DeployDir = $PSScriptRoot
@@ -62,7 +66,7 @@ function Send-ScpFile {
 }
 
 Write-Host ""
-Write-Host "  Screen Ping - publish desktop installer" -ForegroundColor White
+Write-Host "  Screen Ping - publish desktop installer (Tauri)" -ForegroundColor White
 Write-Host "  =======================================" -ForegroundColor DarkGray
 
 $cfg = Get-DeployConfig
@@ -70,41 +74,80 @@ Ensure-PoshSSH
 Import-Module Posh-SSH
 
 $desktopDir = Join-Path $Root "desktop"
+$tauriDir = Join-Path $Root "desktop-tauri"
 $packageJson = Get-Content (Join-Path $desktopDir "package.json") -Raw | ConvertFrom-Json
 $version = $packageJson.version
-$productName = $packageJson.build.productName
-if (-not $productName) { $productName = "Screen Ping" }
-$installerName = "$productName Setup $version.exe"
-
-Write-Step "Generating icons..."
-Push-Location $desktopDir
-try {
-    node scripts/gen-icons.js
-    if ($LASTEXITCODE -ne 0) { throw "Icon generation failed" }
-
-    Write-Step "Building installer (npm run dist)..."
-    $env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-    if (-not (Test-Path "node_modules")) {
-        npm install
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed" }
-    }
-    npm run dist
-    if ($LASTEXITCODE -ne 0) { throw "npm run dist failed" }
-}
-finally {
-    Pop-Location
-}
-
-$releaseDir = Join-Path $desktopDir "release"
+# Same name as the Electron installers: the server, the site and Electron's
+# updater all look for "Screen Ping Setup X.Y.Z.exe".
+$installerName = "Screen Ping Setup $version.exe"
+$releaseDir = Join-Path $tauriDir "release"
+New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
 $installerPath = Join-Path $releaseDir $installerName
-$latestYml = Join-Path $releaseDir "latest.yml"
-if (-not (Test-Path $installerPath)) { throw "Installer not found: $installerPath" }
-if (-not (Test-Path $latestYml)) { throw "latest.yml not found: $latestYml" }
+
+if ($Installer) {
+    # The "screen-ping-tauri" CI artifact, unzipped (or its setup .exe).
+    $source = Get-Item $Installer
+    if ($source.PSIsContainer) {
+        $source = Get-ChildItem $source.FullName -Recurse -Filter "*-setup.exe" | Select-Object -First 1
+        if (-not $source) { throw "No *-setup.exe in $Installer" }
+    }
+    Write-Step "Using $($source.FullName)"
+    Copy-Item $source.FullName $installerPath -Force
+} else {
+    Write-Step "Building the desktop app (Tauri)..."
+    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
+        throw "Rust is not installed. Download the 'screen-ping-tauri' artifact from GitHub Actions and drop its setup .exe on publish-desktop.bat."
+    }
+    Push-Location $desktopDir
+    try {
+        if (-not (Test-Path "node_modules")) {
+            npm ci --ignore-scripts
+            if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
+        }
+        npx vite build
+        if ($LASTEXITCODE -ne 0) { throw "Renderer build failed" }
+    }
+    finally {
+        Pop-Location
+    }
+    Push-Location $tauriDir
+    try {
+        node scripts/prepare-renderer.mjs
+        if ($LASTEXITCODE -ne 0) { throw "prepare-renderer failed" }
+        npx --yes @tauri-apps/cli@2 build
+        if ($LASTEXITCODE -ne 0) { throw "Tauri build failed" }
+    }
+    finally {
+        Pop-Location
+    }
+    $built = Get-ChildItem (Join-Path $tauriDir "src-tauri\target\release\bundle\nsis") -Filter "*_$($version)_x64-setup.exe" |
+        Select-Object -First 1
+    if (-not $built) { throw "Built installer not found for $version" }
+    Copy-Item $built.FullName $installerPath -Force
+}
+
+# Never publish an installer whose own version differs from package.json.
+$builtVersion = (Get-Item $installerPath).VersionInfo.ProductVersion
+if ($builtVersion -and ($builtVersion -replace '\.0$', '') -ne $version -and $builtVersion -ne $version) {
+    throw "The installer is version $builtVersion, but desktop/package.json says $version."
+}
+
 $signingKey = if ($env:SCREENPING_UPDATE_PRIVATE_KEY) { $env:SCREENPING_UPDATE_PRIVATE_KEY } else { Join-Path $DeployDir "update-signing-private.pem" }
 if (-not (Test-Path $signingKey)) { throw "Update signing key not found: $signingKey" }
 node (Join-Path $desktopDir "scripts\sign-update.js") $installerPath $signingKey
 if ($LASTEXITCODE -ne 0) { throw "Update signing failed" }
 $signaturePath = "$installerPath.sig"
+
+# electron-builder's latest.yml format: Electron (<= 1.0.73) and this app both read it.
+$sha = [System.Security.Cryptography.SHA512]::Create()
+$stream = [System.IO.File]::OpenRead($installerPath)
+try { $digest = [Convert]::ToBase64String($sha.ComputeHash($stream)) } finally { $stream.Dispose() }
+$size = (Get-Item $installerPath).Length
+$absUrl = "https://screenping.xyz/desktop/updates/" + [Uri]::EscapeDataString($installerName)
+$releaseDate = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+$yml = "version: $version`nfiles:`n  - url: $absUrl`n    sha512: $digest`n    size: $size`npath: $absUrl`nsha512: $digest`nreleaseDate: '$releaseDate'`n"
+$latestYml = Join-Path $releaseDir "latest.yml"
+[System.IO.File]::WriteAllText($latestYml, $yml, (New-Object System.Text.UTF8Encoding($false)))
 
 $installerUrlName = [Uri]::EscapeDataString($installerName)
 $downloadUrl = "https://screenping.xyz/desktop/updates/$installerUrlName"
@@ -157,9 +200,8 @@ Write-Host "Updated $versionsPath ($($versionList -join ', '))" -ForegroundColor
 
 $versionFeedDir = Join-Path $releaseDir "version-feed\$version"
 New-Item -ItemType Directory -Path $versionFeedDir -Force | Out-Null
-node (Join-Path $desktopDir "scripts\write-version-feed.js") $latestYml $version $installerName $versionFeedDir
-if ($LASTEXITCODE -ne 0) { throw "Failed to write per-version latest.yml" }
 $versionFeedYml = Join-Path $versionFeedDir "latest.yml"
+Copy-Item $latestYml $versionFeedYml -Force
 if (-not (Test-Path $versionFeedYml)) { throw "Version feed missing: $versionFeedYml" }
 
 Write-Step "Uploading to VPS ($($cfg.Host))..."

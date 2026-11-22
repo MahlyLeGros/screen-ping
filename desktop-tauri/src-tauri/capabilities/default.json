@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Screen Ping pages talk to the Rust core only through ipc_invoke / ipc_send.",
+  "windows": ["login", "main", "menu", "overlay", "update"],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-start-dragging"
+  ]
+}

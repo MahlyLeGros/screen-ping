@@ -1,0 +1,5 @@
+src-tauri/target/
+src-tauri/gen/
+core/target/
+dist/
+release/
