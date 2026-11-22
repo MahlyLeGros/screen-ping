@@ -1,18 +1,30 @@
-name: Tauri overlay prototype
+name: Tauri desktop app
 
 on:
   push:
     paths:
       - "desktop-tauri/**"
+      - "desktop/renderer/**"
+      - "shared/**"
       - ".github/workflows/tauri-proto.yml"
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  core-tests:
+    runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: desktop-tauri
+        working-directory: desktop-tauri/core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/core
+      - run: cargo test
+
+  build-windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -22,16 +34,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Build renderer (desktop/renderer, unchanged)
+        working-directory: desktop
+        run: |
+          npm ci --no-audit --no-fund --ignore-scripts
+          npx vite build
+      - name: Prepare renderer for Tauri
+        working-directory: desktop-tauri
+        run: node scripts/prepare-renderer.mjs
       - name: Build installer
+        working-directory: desktop-tauri
         run: npx --yes @tauri-apps/cli@2 build
       - name: Sizes
         shell: pwsh
+        working-directory: desktop-tauri
         run: |
           Get-ChildItem src-tauri/target/release/*.exe, src-tauri/target/release/bundle/nsis/*.exe |
             ForEach-Object { "{0}  {1:N1} Mo" -f $_.Name, ($_.Length / 1MB) }
       - uses: actions/upload-artifact@v4
         with:
-          name: screen-ping-tauri-proto
+          name: screen-ping-tauri
           path: |
             desktop-tauri/src-tauri/target/release/bundle/nsis/*.exe
-            desktop-tauri/src-tauri/target/release/screen-ping-tauri-proto.exe
+            desktop-tauri/src-tauri/target/release/Screen Ping Tauri.exe

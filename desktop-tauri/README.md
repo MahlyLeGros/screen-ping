@@ -1,41 +1,81 @@
-# Prototype overlay Tauri
+# Screen Ping desktop on Tauri
 
-Étape 1 du passage de l'app desktop à Rust (Tauri 2). Ce prototype ne fait
-qu'une chose : vérifier que l'overlay peut se comporter comme celui d'Electron
-(`desktop/main/windows.ts`, `desktop/main/win32Overlay.ts`). Il ne se connecte
-à aucun serveur et ne remplace pas `desktop/`.
+Rust replacement for the Electron desktop app (`desktop/`). It is being
+built step by step; `desktop/` stays the shipping app until the switch.
 
-## Récupérer l'exe
+| Step | Status |
+|------|--------|
+| 1. Overlay prototype (click-through, video/sound, above fullscreen-borderless) | done, tested by Mali |
+| 2. Receiver: login, socket, ping queue, live draw, tray, menu, main window | **this build** |
+| 3. Installer, auto-update, hand-over from the Electron app | todo |
+| 4. Test with friends, then switch | todo |
 
-Chaque push sur `desktop-tauri/` lance le workflow GitHub Actions
-« Tauri overlay prototype ». L'installateur et l'exe portable sont dans
-l'artefact `screen-ping-tauri-proto` du run.
+## Layout
 
-Build local (Windows, Rust + Node installés) :
+| Folder | What it is |
+|--------|------------|
+| `core/` | Rust crate with no UI: settings, HTTP API, Socket.IO, ping queue + draw layer. Ported from `desktop/main/*.ts`. |
+| `src-tauri/` | Tauri app: windows, tray, menu popup, Win32 overlay tricks, DPAPI, autostart. |
+| `src-tauri/src/bridge.js` | Recreates the Electron preload API, so `desktop/renderer` runs unchanged. |
+| `scripts/prepare-renderer.mjs` | Copies `desktop/dist/renderer` to `dist/` and opens the pages' CSP to Tauri IPC. |
+
+Ported file by file:
+
+| Electron (`desktop/main`) | Tauri |
+|---|---|
+| `store.ts` | `core/src/settings.rs` (+ DPAPI in `src-tauri/src/win32.rs`) |
+| `auth.ts`, `apiClient.ts`, `windows.ts` (token refresh) | `core/src/api.rs` |
+| `socketClient.ts`, watchdog in `main.ts` | `core/src/socket.rs` |
+| `overlayQueue.ts`, `drawOverlay.ts` | `core/src/overlay.rs` |
+| `displayLayout.ts` | `core/src/displays.rs` |
+| `win32Overlay.ts`, overlay parts of `windows.ts` | `src-tauri/src/win32.rs`, `src-tauri/src/host.rs` |
+| `main.ts`, `windows.ts`, `tray.ts`, `appState.ts` | `src-tauri/src/app.rs`, `src-tauri/src/ipc.rs` |
+| `preload.ts` | `src-tauri/src/bridge.js` |
+
+Not ported yet (step 3): `updater.ts`, `versionCheck.ts`, `protocol.ts`
+(`screenping://`), the update window. Settings and login from the Electron
+app are not migrated: log in again in the Tauri build.
+
+## Build
+
+Windows, with Rust and Node installed:
 
 ```cmd
+cd desktop && npm ci && npx vite build && cd ..
 cd desktop-tauri
-npx @tauri-apps/cli@2 dev      :: lancement direct
-npx @tauri-apps/cli@2 build    :: installateur dans src-tauri\target\release\bundle\nsis
+node scripts\prepare-renderer.mjs
+npx @tauri-apps/cli@2 build    :: installer in src-tauri\target\release\bundle\nsis
 ```
 
-## Ce qu'il faut vérifier
+CI (`.github/workflows/tauri-proto.yml`) runs the core tests on Linux and
+builds the Windows installer as the `screen-ping-tauri` artifact.
 
-Pour chaque ping (Image, Vidéo + son, Son seul, Image + son, URL), avec
-« Attendre 5 s » coché pour avoir le temps de basculer :
+For a dev build against a local server, set `SCREENPING_SERVER_URL`
+(ignored by release builds) and run `npx @tauri-apps/cli@2 dev`.
 
-1. **Clics** : pendant le ping, cliquer, sélectionner du texte et faire défiler
-   dans la fenêtre en dessous fonctionne.
-2. **Focus** : en tapant dans un bloc-notes, la frappe continue sans
-   interruption quand le ping apparaît.
-3. **Son** : le journal indique « son actif » et on l'entend, sans avoir cliqué
-   dans l'overlay.
-4. **Au-dessus de tout** : le ping reste visible par-dessus une vidéo YouTube
-   en plein écran et par-dessus un jeu en plein écran fenêtré.
-5. **Discrétion** : l'overlay n'apparaît ni dans la barre des tâches ni dans
-   Alt+Tab, et la barre des tâches reste utilisable après le ping.
-6. **Poids** : taille de l'installateur, et mémoire de « Screen Ping Proto »
-   dans le Gestionnaire des tâches (processus WebView2 compris), à comparer
-   avec l'app Electron actuelle.
+## Core end-to-end check
 
-Si 1 à 5 passent, on peut porter le récepteur (étape 2).
+Against a running server with two accepted friends `alice` / `bob`
+(password `pass1234`):
+
+```bash
+cd desktop-tauri/core
+SP_SERVER=http://127.0.0.1:8000 cargo run --example e2e
+```
+
+It logs in, connects with a refused token then recovers, uploads and sends an
+image from bob to alice, checks alice's queue shows and acks it, reconnects,
+and checks a revoked session reports expiry. `examples/resilience.rs` prints
+connection changes while you restart the server.
+
+## What to test in the Windows build
+
+Quit the Electron Screen Ping first (both would receive the pings).
+
+1. Log in (username/password, and "website" login).
+2. The tray icon appears; left or right click opens the menu next to the cursor.
+3. A friend sends an image, a video with sound, a sound alone, and a live drawing:
+   all show, clicks pass through, sound plays, focus is not stolen.
+4. Pause, go offline/online, pick another screen in settings.
+5. Open the main window: friends list, send a ping from the app, compact mode.
+6. Log out, log back in. Quit from the menu.

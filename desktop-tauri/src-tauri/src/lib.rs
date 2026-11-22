@@ -1,92 +1,82 @@
-//! Prototype: can Tauri reproduce the Electron overlay?
-//! Must-haves: clicks always pass through, focus never stolen, stays above
-//! fullscreen apps, video and sound play unmuted without a user gesture.
+//! Screen Ping desktop receiver on Tauri 2.
+//!
+//! The Rust side replaces Electron's main process (desktop/main). The pages
+//! are desktop/renderer, unchanged: `bridge.js` gives them the same
+//! `window.electronAPI` / `window.desktopAPI` the Electron preload did.
 
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
-
+mod app;
+mod displays;
+mod host;
+mod ipc;
 #[cfg(windows)]
 mod win32;
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct Ping {
-    /// "image" | "video" | "audio"
-    kind: String,
-    url: String,
-    /// Optional separate sound played with an image.
-    audio_url: Option<String>,
-    duration_ms: Option<u64>,
-}
+use app::App;
+use screenping_core::settings::PRODUCTION_SERVER_URL;
+use screenping_core::{SecretBox, SettingsStore};
+use std::sync::Arc;
+use tauri::{Manager, RunEvent};
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
-fn overlay(app: &AppHandle) -> Result<WebviewWindow, String> {
-    app.get_webview_window("overlay")
-        .ok_or_else(|| "overlay window missing".to_string())
-}
-
-/// Called by the control window: send a ping to the overlay.
-#[tauri::command]
-fn send_ping(app: AppHandle, ping: Ping) -> Result<(), String> {
-    overlay(&app)?.emit("ping", ping).map_err(|e| e.to_string())
-}
-
-/// Called by the overlay once media is preloaded: cover the primary monitor
-/// and show without activating.
-#[tauri::command]
-fn show_overlay(app: AppHandle) -> Result<(), String> {
-    let win = overlay(&app)?;
-    let monitor = win
-        .primary_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or("no monitor")?;
-    let pos = *monitor.position();
-    let size = *monitor.size();
-    win.set_position(PhysicalPosition::new(pos.x, pos.y))
-        .map_err(|e| e.to_string())?;
-    // One pixel short, like Electron: a topmost window covering the monitor
-    // exactly makes Windows treat it as a fullscreen app (taskbar, games).
-    win.set_size(PhysicalSize::new(size.width, size.height.saturating_sub(1).max(1)))
-        .map_err(|e| e.to_string())?;
-    win.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
-
-    #[cfg(windows)]
-    {
-        let hwnd = win.hwnd().map_err(|e| e.to_string())?;
-        win32::show_topmost_no_activate(hwnd);
-        win32::enable_zorder_guard(hwnd);
-        win32::start_topmost_keeper(hwnd);
+pub(crate) fn apply_autostart(handle: &tauri::AppHandle, enabled: bool) {
+    // Only installed builds register at login (Electron: app.isPackaged).
+    if cfg!(debug_assertions) {
+        return;
     }
+    let launcher = handle.autolaunch();
+    let _ = if enabled { launcher.enable() } else { launcher.disable() };
+}
+
+fn secret_box() -> Arc<dyn SecretBox> {
+    #[cfg(windows)]
+    return Arc::new(win32::DpapiSecretBox);
     #[cfg(not(windows))]
-    win.show().map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Called by the overlay when the ping ends: hide and park off-screen.
-#[tauri::command]
-fn hide_overlay(app: AppHandle) -> Result<(), String> {
-    let win = overlay(&app)?;
-    #[cfg(windows)]
-    {
-        let hwnd = win.hwnd().map_err(|e| e.to_string())?;
-        win32::stop_topmost_keeper();
-        win32::disable_zorder_guard(hwnd);
-    }
-    win.hide().map_err(|e| e.to_string())?;
-    let _ = win.set_position(PhysicalPosition::new(-32000, -32000));
-    let _ = win.set_size(PhysicalSize::new(1, 1));
-    Ok(())
+    Arc::new(screenping_core::settings::PlainSecretBox)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            let win = overlay(app.handle())?;
-            win.set_ignore_cursor_events(true)?;
-            #[cfg(windows)]
-            win32::make_tool_window(win.hwnd()?);
+        .plugin(tauri_plugin_single_instance::init(|handle, _argv, _cwd| {
+            if let Some(app) = handle.try_state::<Arc<App>>() {
+                app.second_instance();
+            }
+        }))
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![ipc::ipc_invoke, ipc::ipc_send])
+        .setup(|tauri_app| {
+            let handle = tauri_app.handle().clone();
+            let dir = handle.path().app_config_dir()?;
+            let store = SettingsStore::load(dir.join("settings.json"), secret_box());
+
+            // Installed builds always use production; dev builds may point
+            // elsewhere (Electron's USE_LOCAL_SERVER flag).
+            let server = std::env::var("SCREENPING_SERVER_URL")
+                .ok()
+                .filter(|_| cfg!(debug_assertions))
+                .unwrap_or_else(|| PRODUCTION_SERVER_URL.to_string());
+            store.update(|s| s.server_url = server);
+
+            let version = handle.package_info().version.to_string();
+            // The core spawns tokio tasks: enter Tauri's runtime.
+            let _guard = tauri::async_runtime::handle().inner().enter();
+            let app = App::new(handle.clone(), store.clone(), version);
+            tauri_app.manage(app.clone());
+
+            apply_autostart(&handle, store.get().launch_at_login);
+            app.create_overlay_windows()?;
+            tauri::async_runtime::spawn(app.clone().bootstrap());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![send_ping, show_overlay, hide_overlay])
-        .run(tauri::generate_context!())
-        .expect("error while running Screen Ping prototype");
+        .build(tauri::generate_context!())
+        .expect("error while building Screen Ping")
+        .run(|_handle, event| {
+            // Keep running in the tray when windows close; "Quit" calls exit().
+            if let RunEvent::ExitRequested { code: None, api, .. } = event {
+                api.prevent_exit();
+            }
+        });
 }
