@@ -5,6 +5,7 @@ use crate::host::{Host, AUDIO, OVERLAY};
 use crate::displays;
 use screenping_core::overlay::{OverlayQueue, QueueOutput};
 use screenping_core::socket::{SocketEvents, SocketManager};
+use screenping_core::updater::{UpdateStatus, Updater};
 use screenping_core::{Api, SettingsStore};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -22,6 +23,7 @@ use tauri_plugin_opener::OpenerExt;
 pub const LOGIN: &str = "login";
 pub const MAIN: &str = "main";
 pub const MENU: &str = "menu";
+pub const UPDATE: &str = "update";
 
 const BRIDGE: &str = include_str!("bridge.js");
 /// Same flags as Electron's main.ts, plus unmuted autoplay. Every webview in
@@ -35,6 +37,10 @@ const COMPACT_WIDTH: f64 = 690.0;
 const FULL_MIN_HEIGHT: f64 = 420.0;
 const COMPACT_MIN_HEIGHT: f64 = 120.0;
 const TRAY_CLICK_GRACE: Duration = Duration::from_millis(600);
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(4 * 60 * 60);
+/// updater.ts: an update ready this early is installed right away (restarting
+/// costs nothing yet); later ones wait for Quit.
+const LAUNCH_INSTALL_WINDOW: Duration = Duration::from_secs(2 * 60);
 
 #[derive(Default)]
 struct MenuState {
@@ -54,6 +60,10 @@ pub struct App {
     pub queue: OverlayQueue,
     pub host: Arc<Host>,
     pub version: String,
+    pub updater: Updater,
+    launched_at: Instant,
+    /// The update window is open and owns the flow (updater.ts manualFlow).
+    manual_update: AtomicBool,
     connected: AtomicBool,
     overlay_initialized: AtomicBool,
     handling_expiry: AtomicBool,
@@ -156,6 +166,13 @@ impl App {
         let socket = SocketManager::new(api.clone(), events.clone(), &version);
         let _ = output.0.set(socket.clone());
         let queue = OverlayQueue::new(host.clone(), output, store.server_url());
+        let update_dir = handle
+            .path()
+            .app_local_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir().join("screen-ping"))
+            .join("updates");
+        let server_store = store.clone();
+        let updater = Updater::new(&version, update_dir, move || server_store.server_url());
         let app = Arc::new(App {
             handle,
             store,
@@ -164,6 +181,9 @@ impl App {
             queue,
             host,
             version,
+            updater,
+            launched_at: Instant::now(),
+            manual_update: AtomicBool::new(false),
             connected: AtomicBool::new(false),
             overlay_initialized: AtomicBool::new(false),
             handling_expiry: AtomicBool::new(false),
@@ -173,6 +193,12 @@ impl App {
             tray: Mutex::new(None),
         });
         let _ = events.0.set(Arc::downgrade(&app));
+        let weak = Arc::downgrade(&app);
+        app.updater.set_listener(move |_| {
+            if let Some(a) = weak.upgrade() {
+                a.push_state();
+            }
+        });
         let weak = Arc::downgrade(&app);
         app.api.set_session_expired_handler(move || {
             if let Some(a) = weak.upgrade() {
@@ -526,10 +552,9 @@ impl App {
             "compact": s.compact,
             "overlayDisplayId": s.overlay_display_id,
             "displays": displays::list(&self.handle),
-            // Updates come in step 3 of the migration.
-            "update": { "state": "idle" },
-            "latestVersion": Value::Null,
-            "outdated": false,
+            "update": self.updater.status_json(),
+            "latestVersion": self.updater.latest_known(),
+            "outdated": self.updater.outdated_target().is_some(),
         })
     }
 
@@ -697,11 +722,23 @@ impl App {
             "open-send" => self.open_tab("send"),
             "reconnect" => self.socket.reconnect().await,
             "logout" => self.logout().await,
-            "quit" => self.handle.exit(0),
+            "quit" => {
+                // updater.ts before-quit: a ready update installs on the way out.
+                if self.updater.ready_installer().is_some() {
+                    self.install_update();
+                } else {
+                    self.handle.exit(0);
+                }
+            }
             "open-dashboard" => self.open_url(&self.store.server_url()),
             "open-kofi" => self.open_url("https://ko-fi.com/screenping"),
-            // Auto-update arrives in step 3 of the migration.
-            "check-updates" | "install-update" | "cancel-update" => {}
+            "check-updates" => self.begin_manual_update(),
+            "install-update" => self.install_update(),
+            "cancel-update" => {
+                self.updater.cancel();
+                self.manual_update.store(false, Ordering::SeqCst);
+                self.close(UPDATE);
+            }
             _ => {}
         }
         self.refresh_tray();
@@ -711,9 +748,145 @@ impl App {
         self.open_url(&url);
     }
 
-    pub fn second_instance(self: &Arc<Self>) {
+    pub fn second_instance(self: &Arc<Self>, argv: &[String]) {
+        if self.handle_protocol_args(argv) {
+            return;
+        }
         if self.store.access_token().is_none() {
             self.show_login();
         }
+    }
+
+    // ----- updates (updater.ts, versionCheck.ts, protocol.ts) -------------
+
+    /// `screenping://update` (the site's update page). True when handled.
+    pub fn handle_protocol_args(self: &Arc<Self>, argv: &[String]) -> bool {
+        let Some(url) = argv.iter().find(|a| a.to_ascii_lowercase().starts_with("screenping://")) else {
+            return false;
+        };
+        let action = url["screenping://".len()..]
+            .trim_matches('/')
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if matches!(action.as_str(), "" | "update" | "install") {
+            self.begin_manual_update();
+        }
+        true
+    }
+
+    /// Background checks: at launch, then every 4 hours (installed builds).
+    pub fn init_updater(self: &Arc<Self>) {
+        if cfg!(debug_assertions) {
+            return;
+        }
+        let me = Arc::downgrade(self);
+        tauri::async_runtime::spawn(async move {
+            loop {
+                let Some(a) = me.upgrade() else { return };
+                a.clone().check_for_updates().await;
+                drop(a);
+                tokio::time::sleep(UPDATE_CHECK_INTERVAL).await;
+            }
+        });
+    }
+
+    async fn check_for_updates(self: Arc<Self>) {
+        if self.updater.check_and_download().await {
+            self.on_update_ready();
+        }
+    }
+
+    fn on_update_ready(self: &Arc<Self>) {
+        // The user is watching the update window: let them press the button.
+        if self.manual_update.load(Ordering::SeqCst) {
+            return;
+        }
+        if self.launched_at.elapsed() < LAUNCH_INSTALL_WINDOW {
+            self.install_update();
+            return;
+        }
+        if let Some((version, _)) = self.updater.ready_installer() {
+            let _ = self
+                .handle
+                .notification()
+                .builder()
+                .title("Screen Ping")
+                .body(format!("Mise à jour v{version} prête — elle s'installera à la fermeture."))
+                .show();
+        }
+    }
+
+    pub fn begin_manual_update(self: &Arc<Self>) {
+        self.manual_update.store(true, Ordering::SeqCst);
+        self.show_update_window();
+        if cfg!(debug_assertions) || self.updater.is_busy() {
+            return;
+        }
+        tauri::async_runtime::spawn(self.clone().check_for_updates());
+    }
+
+    fn show_update_window(self: &Arc<Self>) {
+        if let Some(w) = self.win(UPDATE) {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+            return;
+        }
+        let built = builder(&self.handle, UPDATE, "update")
+            .inner_size(380.0, 214.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(false)
+            .always_on_top(true)
+            .shadow(true)
+            .background_color(tauri::window::Color(3, 3, 4, 255))
+            .center()
+            .build();
+        let Ok(w) = built else { return };
+        let _ = w.set_focus();
+        let me = Arc::downgrade(self);
+        w.on_window_event(move |e| {
+            if let WindowEvent::Destroyed = e {
+                // Closing only stops watching: a download in flight carries on
+                // and falls back to the silent install path.
+                if let Some(a) = me.upgrade() {
+                    a.manual_update.store(false, Ordering::SeqCst);
+                    if a.updater.ready_installer().is_some() {
+                        a.on_update_ready();
+                    }
+                }
+            }
+        });
+    }
+
+    /// Silent install, then the installer starts the new version (`/R`).
+    pub fn install_update(self: &Arc<Self>) {
+        let Some((version, installer)) = self.updater.ready_installer() else { return };
+        self.updater.set_status(UpdateStatus::Installing { version });
+        self.host.park_window();
+        let spawned = {
+            let mut cmd = std::process::Command::new(&installer);
+            cmd.args(["/S", "/UPDATE", "/R"]);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                const DETACHED_PROCESS: u32 = 0x0000_0008;
+                const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+                cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+            }
+            cmd.spawn()
+        };
+        if let Err(e) = spawned {
+            self.updater.set_status(UpdateStatus::Error { message: format!("Could not start the installer: {e}") });
+            return;
+        }
+        let me = self.clone();
+        tauri::async_runtime::spawn(async move {
+            me.socket.disconnect().await;
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+            me.handle.exit(0);
+        });
     }
 }

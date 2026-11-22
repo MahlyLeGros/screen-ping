@@ -1,13 +1,14 @@
 # Screen Ping desktop on Tauri
 
-Rust replacement for the Electron desktop app (`desktop/`). It is being
-built step by step; `desktop/` stays the shipping app until the switch.
+Rust replacement for the Electron desktop app (`desktop/`). From 1.1.0 this
+is the app that ships: `desktop/` keeps the pages (`desktop/renderer`, used
+unchanged) and the version number (`desktop/package.json`).
 
 | Step | Status |
 |------|--------|
 | 1. Overlay prototype (click-through, video/sound, above fullscreen-borderless) | done, tested by Mali |
-| 2. Receiver: login, socket, ping queue, live draw, tray, menu, main window | **this build** |
-| 3. Installer, auto-update, hand-over from the Electron app | todo |
+| 2. Receiver: login, socket, ping queue, live draw, tray, menu, main window | done, tested by Mali |
+| 3. Installer, auto-update, hand-over from the Electron app | **this build** |
 | 4. Test with friends, then switch | todo |
 
 ## Layout
@@ -31,10 +32,45 @@ Ported file by file:
 | `win32Overlay.ts`, overlay parts of `windows.ts` | `src-tauri/src/win32.rs`, `src-tauri/src/host.rs` |
 | `main.ts`, `windows.ts`, `tray.ts`, `appState.ts` | `src-tauri/src/app.rs`, `src-tauri/src/ipc.rs` |
 | `preload.ts` | `src-tauri/src/bridge.js` |
+| `updater.ts`, `updateFeed.ts`, `updateSignature.ts`, `versionCheck.ts` | `core/src/updater.rs`, update parts of `app.rs` |
+| `protocol.ts` (`screenping://update`) | `app.rs` (`handle_protocol_args`), `win32.rs` (`register_protocol`) |
+| `userData.ts` + `store.ts` (taking over Electron's login) | `core/src/electron_import.rs`, `src-tauri/src/migrate.rs` |
 
-Not ported yet (step 3): `updater.ts`, `versionCheck.ts`, `protocol.ts`
-(`screenping://`), the update window. Settings and login from the Electron
-app are not migrated: log in again in the Tauri build.
+## Moving people off Electron
+
+Nothing new is needed on the Electron side: 1.0.73 updates to this app on
+its own.
+
+1. `deploy\publish-desktop.bat` publishes this installer as
+   `Screen Ping Setup X.Y.Z.exe` with the usual `.sig` and `latest.yml`.
+2. Electron's updater sees a newer version, downloads it, checks its hash and
+   Ed25519 signature, and runs it with `--updated /S --force-run`.
+3. The installer hook (`src-tauri/nsis/hooks.nsh`) silently uninstalls the
+   Electron app (it keeps `%APPDATA%\screen-ping-desktop`), removes its
+   start-at-login entry and the old "Screen Ping Tauri" test build, installs,
+   and starts the new app.
+4. On first launch the app reads Electron's `config.json`, opens its refresh
+   token (DPAPI key from Electron's `Local State`, then AES-GCM), and stores
+   it again with its own DPAPI box: people stay signed in, with the same
+   volume, screen and options.
+
+After that, this app updates itself the same way (same server endpoints, same
+signing key), starting the installer with `/S /UPDATE /R`.
+
+## Publishing
+
+On the PC that has `deploy\deploy.config.ps1` and
+`deploy\update-signing-private.pem`:
+
+1. Bump `desktop/package.json` and push; wait for the "Tauri desktop app"
+   workflow and download its `screen-ping-tauri` artifact.
+2. Drop the unzipped artifact (or its `*-setup.exe`) on
+   `deploy\publish-desktop.bat`. Run it alone to build locally instead
+   (needs Rust).
+3. Commit the updated `server/app/desktop/latest.json` and `versions.json`.
+
+The script refuses an installer whose version differs from
+`desktop/package.json`.
 
 ## Build
 
@@ -70,7 +106,11 @@ connection changes while you restart the server.
 
 ## What to test in the Windows build
 
-Quit the Electron Screen Ping first (both would receive the pings).
+Hand-over from Electron (before publishing): with the Electron 1.0.73 app
+installed and logged in, run the new `Screen Ping_X_x64-setup.exe` (a normal
+double-click, or `/S --force-run` to do exactly what Electron's updater does).
+Electron should disappear (tray, Start menu, Apps list), the new app should
+start in the tray already logged in, and a reboot should start only the new app.
 
 1. Log in (username/password, and "website" login).
 2. The tray icon appears; left or right click opens the menu next to the cursor.

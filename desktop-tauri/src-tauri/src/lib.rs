@@ -9,6 +9,8 @@ mod displays;
 mod host;
 mod ipc;
 #[cfg(windows)]
+mod migrate;
+#[cfg(windows)]
 mod win32;
 
 use app::App;
@@ -37,9 +39,9 @@ fn secret_box() -> Arc<dyn SecretBox> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|handle, _argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|handle, argv, _cwd| {
             if let Some(app) = handle.try_state::<Arc<App>>() {
-                app.second_instance();
+                app.second_instance(&argv);
             }
         }))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
@@ -51,6 +53,13 @@ pub fn run() {
             let handle = tauri_app.handle().clone();
             let dir = handle.path().app_config_dir()?;
             let store = SettingsStore::load(dir.join("settings.json"), secret_box());
+            #[cfg(windows)]
+            if !cfg!(debug_assertions) {
+                migrate::import_from_electron(&store, &dir);
+                if let Ok(exe) = std::env::current_exe() {
+                    win32::register_protocol(&exe.to_string_lossy());
+                }
+            }
 
             // Installed builds always use production; dev builds may point
             // elsewhere (Electron's USE_LOCAL_SERVER flag).
@@ -69,6 +78,9 @@ pub fn run() {
             apply_autostart(&handle, store.get().launch_at_login);
             app.create_overlay_windows()?;
             tauri::async_runtime::spawn(app.clone().bootstrap());
+            app.init_updater();
+            let args: Vec<String> = std::env::args().collect();
+            app.handle_protocol_args(&args);
             Ok(())
         })
         .build(tauri::generate_context!())

@@ -1,7 +1,7 @@
 //! The two commands behind the bridge (bridge.js): the same channel names
 //! the Electron preload used with ipcRenderer.invoke / ipcRenderer.send.
 
-use crate::app::{App, LOGIN, MAIN, MENU};
+use crate::app::{App, LOGIN, MAIN, MENU, UPDATE};
 use crate::host::OVERLAY;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -41,7 +41,7 @@ pub async fn ipc_invoke(
     if label == OVERLAY && channel == "overlay:get-volume" {
         return Ok(json!(app.store.get().receive_volume));
     }
-    let from_ui = label == LOGIN || label == MAIN || label == MENU;
+    let from_ui = label == LOGIN || label == MAIN || label == MENU || label == UPDATE;
     if !from_ui {
         return Err("Not allowed from this window".into());
     }

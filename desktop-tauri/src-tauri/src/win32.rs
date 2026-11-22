@@ -4,6 +4,7 @@
 //! - idle time (Electron powerMonitor.getSystemIdleTime)
 //! - DPAPI secret box (Electron safeStorage)
 //! - light taskbar check (assetsPath.ts loadTrayIcon)
+//! - screenping:// registration and Electron leftovers (protocol.ts)
 
 use base64::Engine;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -12,7 +13,10 @@ use windows::Win32::Foundation::{HLOCAL, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::Security::Cryptography::{
     CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
 };
-use windows::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+use windows::core::{HSTRING, PCWSTR};
+use windows::Win32::System::Registry::{
+    RegDeleteKeyValueW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_REG_DWORD, RRF_RT_REG_SZ,
+};
 use windows::Win32::System::SystemInformation::GetTickCount;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
@@ -148,14 +152,83 @@ impl screenping_core::SecretBox for DpapiSecretBox {
     fn open(&self, sealed: &str) -> Result<String, String> {
         let b64 = sealed.strip_prefix(PREFIX).ok_or("not sealed")?;
         let bytes = base64::engine::general_purpose::STANDARD.decode(b64).map_err(|e| e.to_string())?;
+        String::from_utf8(dpapi_unprotect(&bytes)?).map_err(|e| e.to_string())
+    }
+}
+
+/// CryptUnprotectData, current user (also opens Chromium's `Local State` key).
+pub fn dpapi_unprotect(bytes: &[u8]) -> Result<Vec<u8>, String> {
+    unsafe {
+        let input = CRYPT_INTEGER_BLOB { cbData: bytes.len() as u32, pbData: bytes.as_ptr() as *mut u8 };
+        let mut out = CRYPT_INTEGER_BLOB::default();
+        CryptUnprotectData(&input, None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)
+            .map_err(|e| e.to_string())?;
+        let plain = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
+        let _ = windows::Win32::Foundation::LocalFree(Some(HLOCAL(out.pbData as *mut _)));
+        Ok(plain)
+    }
+}
+
+fn set_hkcu_string(key: &str, name: Option<&str>, value: &str) {
+    let key = HSTRING::from(key);
+    let name = name.map(HSTRING::from);
+    let data: Vec<u16> = value.encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let _ = RegSetKeyValueW(
+            HKEY_CURRENT_USER,
+            &key,
+            name.as_ref().map_or(PCWSTR::null(), |n| PCWSTR(n.as_ptr())),
+            REG_SZ.0,
+            Some(data.as_ptr() as *const _),
+            (data.len() * 2) as u32,
+        );
+    }
+}
+
+fn get_hkcu_string(key: &str, name: &str) -> Option<String> {
+    let key = HSTRING::from(key);
+    let name = HSTRING::from(name);
+    let mut buf = vec![0u16; 2048];
+    let mut size = (buf.len() * 2) as u32;
+    unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            &key,
+            &name,
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr() as *mut _),
+            Some(&mut size),
+        )
+        .ok()
+        .ok()?;
+    }
+    let len = (size as usize / 2).saturating_sub(1).min(buf.len());
+    Some(String::from_utf16_lossy(&buf[..len]))
+}
+
+/// `app.setAsDefaultProtocolClient("screenping")`, per user.
+pub fn register_protocol(exe: &str) {
+    let root = r"Software\Classes\screenping";
+    set_hkcu_string(root, None, "URL:Screen Ping");
+    set_hkcu_string(root, Some("URL Protocol"), "");
+    set_hkcu_string(&format!(r"{root}\DefaultIcon"), None, &format!("\"{exe}\",0"));
+    set_hkcu_string(&format!(r"{root}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""));
+}
+
+/// Drop the Electron app's start-at-login entry (its installer hook does this
+/// too; this covers a manual install of this app next to Electron).
+pub fn remove_electron_autostart() {
+    const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+    const APPROVED: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+    const NAME: &str = "com.screenping.app";
+    let Some(cmd) = get_hkcu_string(RUN, NAME) else { return };
+    if !cmd.to_ascii_lowercase().contains("screen-ping-desktop") {
+        return;
+    }
+    for key in [RUN, APPROVED] {
         unsafe {
-            let input = CRYPT_INTEGER_BLOB { cbData: bytes.len() as u32, pbData: bytes.as_ptr() as *mut u8 };
-            let mut out = CRYPT_INTEGER_BLOB::default();
-            CryptUnprotectData(&input, None, None, None, None, CRYPTPROTECT_UI_FORBIDDEN, &mut out)
-                .map_err(|e| e.to_string())?;
-            let plain = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
-            let _ = windows::Win32::Foundation::LocalFree(Some(HLOCAL(out.pbData as *mut _)));
-            String::from_utf8(plain).map_err(|e| e.to_string())
+            let _ = RegDeleteKeyValueW(HKEY_CURRENT_USER, &HSTRING::from(key), &HSTRING::from(NAME));
         }
     }
 }

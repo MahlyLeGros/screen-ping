@@ -15,6 +15,8 @@ pub mod displays;
 pub mod overlay;
 pub mod settings;
 pub mod socket;
+pub mod updater;
+pub mod electron_import;
 
 pub use api::{Api, ApiError, RefreshResult};
 pub use settings::{SecretBox, Settings, SettingsStore};
