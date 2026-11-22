@@ -2,7 +2,9 @@ import { FormEvent, useCallback, useEffect, useRef, useState, type DragEvent, ty
 import ComposeColumnGlows from "../components/ComposeColumnGlows";
 import { WidgetLayoutProvider, WidgetPane, MovableWidget, WidgetGrip } from "../components/WidgetLayout";
 import TikTokImport from "../components/TikTokImport";
-import { restoreVideoImport, videoRecipe } from "../lib/restoreVideoImport";
+import VideoClipDialog from "../components/VideoClipDialog";
+import { useLocalVideo } from "../lib/useLocalVideo";
+import { prepareSlideshowDuration, prepareTikTokLoop, restoreVideoImport, videoRecipe } from "../lib/restoreVideoImport";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import type { MediaImportJob } from "../lib/api";
 import { useDashboardChrome } from "../context/DashboardChromeContext";
@@ -140,7 +142,7 @@ function useFileDrop(onFiles: (files: File[]) => void) {
   return { dropActive, dropHandlers: { onDragEnter, onDragOver, onDragLeave, onDrop } };
 }
 
-function FilePicker({ label, hint, accept, value, onChange, onPickFiles, multiple, displayLabel, compact }: FilePickerProps) {
+function FilePicker({ label, hint, accept, value, onChange, onPickFiles, multiple, displayLabel, compact, onTrim }: FilePickerProps & { onTrim?: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const audioOnly = accept.includes("audio") && !accept.includes("image") && !accept.includes("video");
 
@@ -181,7 +183,7 @@ function FilePicker({ label, hint, accept, value, onChange, onPickFiles, multipl
     <div>
       <span className="field-label">{label}</span>
       <div
-        className={`upload-zone ${compact ? "px-2.5 py-2" : "px-3 py-3"} ${hasSelection ? "pr-8" : ""} ${
+        className={`upload-zone ${compact ? "px-2.5 py-2" : "px-3 py-3"} ${onTrim ? "pr-24" : hasSelection ? "pr-8" : ""} ${
           dropActive ? "is-drop-active" : ""
         }`}
         {...dropHandlers}
@@ -212,6 +214,12 @@ function FilePicker({ label, hint, accept, value, onChange, onPickFiles, multipl
             )}
           </span>
         </button>
+        {onTrim && <button type="button" onClick={onTrim} aria-label="Trim video" title="Trim video"
+          className="absolute right-12 top-1/2 flex min-h-11 min-w-11 -translate-y-1/2 items-center justify-center rounded p-2 text-slate-500 hover:text-slate-300">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M9 15l1-4 8-8a2 2 0 0 1 3 3l-8 8-4 1ZM16 5l3 3" />
+          </svg>
+        </button>}
         {hasSelection && (
           <button
             type="button"
@@ -354,10 +362,14 @@ export default function DashboardPage() {
   const [drawReceiverIds, setDrawReceiverIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  const localVideo = useLocalVideo();
+  const local = localVideo.local;
+  const pendingLocalSend = useRef<AbortController | null>(null);
+  const [waitingForLocalSend, setWaitingForLocalSend] = useState(false);
+  useEffect(() => () => pendingLocalSend.current?.abort(), []);
   const [importJob, setImportJob] = useState<MediaImportJob | null>(null);
   const [clippingEnabled, setClippingEnabled] = useState(false);
   const [preparingVideo, setPreparingVideo] = useState(false);
-  const [videoUploadError, setVideoUploadError] = useState("");
   useEffect(() => { void api.videoCapabilities().then(c => setClippingEnabled(Boolean(c.video_clip))).catch(() => undefined); }, []);
   const importedVideo = importJob?.status === "ready" && Boolean(importJob.media_url);
   const importLocksMedia = preparingVideo || Boolean(importJob && !["failed", "cancelled"].includes(importJob.status));
@@ -406,7 +418,13 @@ export default function DashboardPage() {
   const overlaySound = hasVisualMedia && soundFile ? soundFile : undefined;
   const showLayoutEditor = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
   const hasSendMedia = importedVideo || Boolean(uploadFile) || imageLayers.length > 0;
-  const canSend = hasSendMedia && receiverIds.length > 0 && !loading && (!importLocksMedia || importedVideo);
+  const canSend = hasSendMedia && receiverIds.length > 0 && !loading && !waitingForLocalSend && !local?.error && (!importLocksMedia || importedVideo);
+
+  function cancelLocalSend() {
+    if (!pendingLocalSend.current) return;
+    pendingLocalSend.current.abort(); pendingLocalSend.current = null;
+    setWaitingForLocalSend(false); setStatus("");
+  }
 
   const desktopUrl =
     desktopDownload?.download_url ?? "https://screenping.xyz/api/desktop/download";
@@ -539,6 +557,7 @@ export default function DashboardPage() {
         catch (error) { if (!(error instanceof Error) || !/Import (expired|not found)/i.test(error.message)) { setStatus(error instanceof Error ? error.message : "Could not replace the video"); return; } }
       }
       const video = files.find((f) => guessMediaKind(f) === "video");
+      cancelLocalSend(); localVideo.remove();
       retainedVideoRef.current = video ?? null;
       setImportJob(null);
       if (video) {
@@ -546,12 +565,9 @@ export default function DashboardPage() {
         setImageLayers([]);
         setActiveLayerId(null);
         if (clippingEnabled) {
-          setFile(null); setPreparingVideo(true); setVideoUploadError(""); setStatus("Uploading video source…");
-          void api.uploadVideoSource(video).then(job => { setImportJob(job); setStatus(""); }).catch(err => {
-            const message = err instanceof Error ? err.message : "Could not upload the video";
-            setVideoUploadError(message); setStatus(message);
-          })
-            .finally(() => setPreparingVideo(false));
+          setFile(video); setStatus("");
+          setDuration(DEFAULT_DURATION_MS);
+          localVideo.start(video);
           setLayout(DEFAULT_LAYOUT); setOverlayCaption(""); setCaptionLayout(DEFAULT_CAPTION_LAYOUT);
           return;
         }
@@ -573,7 +589,7 @@ export default function DashboardPage() {
         setStatus(error instanceof Error ? error.message : "Could not add image");
       });
     },
-    [addImageFiles, preparingVideo, importJob, clippingEnabled],
+    [addImageFiles, preparingVideo, importJob, clippingEnabled, localVideo],
   );
 
   const ingestDroppedFiles = useCallback(
@@ -605,6 +621,8 @@ export default function DashboardPage() {
 
   function onMediaFileChange(newFile: File | null) {
     if (!newFile) {
+      if (loading) return;
+      cancelLocalSend(); localVideo.remove();
       setFile(null);
       revokeLayerUrls(imageLayers);
       setImageLayers([]);
@@ -626,6 +644,7 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (local) return;
     if (!file && !importedVideo) {
       setEditorPreviewUrl(null);
       setEditorPreviewIsVideo(false);
@@ -655,11 +674,17 @@ export default function DashboardPage() {
       cancelled = true;
       if (activeUrl) URL.revokeObjectURL(activeUrl);
     };
-  }, [file, importedVideo, importJob?.media_url]);
+  }, [file, importedVideo, importJob?.media_url, local?.file]);
+
+  useEffect(() => {
+    if (!local?.duration) return;
+    if (skipDurationSyncRef.current) { skipDurationSyncRef.current = false; return; }
+    setDuration(Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, local.cut ? local.cut.end - local.cut.start : local.duration)));
+  }, [local?.file, local?.duration, local?.cut]);
 
   // Match Stay on screen to the longest of video / sound (clamped 2–30s).
   useEffect(() => {
-    if (importedVideo) return;
+    if (importedVideo || local) return;
     const key = mediaDurationKey(file, soundFile);
     if (!key || key === "|" || key === lastDurationMediaKeyRef.current) return;
     if (skipDurationSyncRef.current) {
@@ -676,7 +701,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [file, soundFile, importedVideo]);
+  }, [file, soundFile, importedVideo, local?.file]);
 
   const handleLayoutChange = useCallback((next: MediaLayout) => {
     setLayout(next);
@@ -782,13 +807,13 @@ export default function DashboardPage() {
     try {
       const fresh = await api.importStatus(previous.id);
       const next = previous.status === "awaiting_selection" && fresh.status === "ready"
-        ? { ...fresh, status: "awaiting_selection" as const, start_ms: previous.start_ms, end_ms: previous.end_ms, volume: previous.volume }
+        ? { ...fresh, status: "awaiting_selection" as const, start_ms: previous.start_ms, end_ms: previous.end_ms, volume: previous.volume, seconds_per_photo: previous.seconds_per_photo }
         : fresh;
       setImportJob(next); return next;
     }
     catch (error) {
       if (!(error instanceof Error) || !/Import (expired|not found)/i.test(error.message)) throw error;
-      const remote = videoRecipe(previous);
+      const remote = videoRecipe(previous, duration);
       const local = previous.platform === "local" ? retainedVideoRef.current : null;
       if (!remote && !local) throw new Error("This video expired; please select the file again");
       const recipe = remote ?? { url: "", start_ms: previous.start_ms ?? 0, end_ms: previous.end_ms ?? previous.duration_ms ?? 0, volume: previous.volume ?? 1 };
@@ -801,7 +826,7 @@ export default function DashboardPage() {
 
   async function handleSend(e: FormEvent) {
     e.preventDefault();
-    if (importWorkRef.current || loading || preparingVideo) return;
+    if (importWorkRef.current || loading || preparingVideo || pendingLocalSend.current) return;
     if (!hasSendMedia) {
       setStatus("Choose a file or load a saved ping");
       return;
@@ -812,6 +837,21 @@ export default function DashboardPage() {
     }
     const uploadSound = overlaySound;
     const sendAudioDelay = hasSound ? audioDelayMs : 0;
+    let preparedLocal: MediaImportJob | null = null;
+    if (local) {
+      if (local.error) return;
+      if ((local.duration ?? 0) > MAX_DURATION_MS && !local.cut) { localVideo.open(true); return; }
+      const pending = new AbortController(); pendingLocalSend.current = pending;
+      setStatus("");
+      setWaitingForLocalSend(true);
+      try { preparedLocal = await localVideo.ready(local.file, pending.signal); }
+      catch (error) {
+        if (!pending.signal.aborted) setStatus(error instanceof Error ? error.message : "Could not prepare video");
+      } finally {
+        if (pendingLocalSend.current === pending) { pendingLocalSend.current = null; setWaitingForLocalSend(false); }
+      }
+      if (pending.signal.aborted || !preparedLocal) return;
+    }
     setLoading(true);
     importWorkRef.current = true;
     setStatus("Uploading...");
@@ -821,12 +861,24 @@ export default function DashboardPage() {
 
       let uploads;
       let sendLayout = layout;
+      let sendDuration = duration;
 
       const sendOverlayCaption = isVideo ? overlayCaption.trim() || undefined : undefined;
 
-      if (importedVideo && importJob) {
-        const prepared = await ensureFreshImport(importJob);
-        uploads = await api.sendImport(prepared.id, receiverIds, duration, sendOverlayCaption, uploadSound);
+      if (preparedLocal) {
+        sendDuration = Math.max(MIN_DURATION_MS, Math.min(duration, preparedLocal.duration_ms ?? duration));
+        uploads = await api.sendImport(preparedLocal.id, receiverIds, sendDuration, sendOverlayCaption, uploadSound);
+      } else if (importedVideo && importJob) {
+        let prepared = await ensureFreshImport(importJob);
+        if (prepared.media_kind === "slideshow") {
+          setStatus("Preparing slideshow duration…");
+          prepared = await prepareSlideshowDuration(prepared, duration, setImportJob);
+          sendDuration = prepared.duration_ms ?? duration;
+        } else if (prepared.platform === "tiktok") {
+          setStatus("Preparing TikTok playback…");
+          prepared = await prepareTikTokLoop(prepared, duration, setImportJob);
+        }
+        uploads = await api.sendImport(prepared.id, receiverIds, sendDuration, sendOverlayCaption, uploadSound);
       } else if (isLayerCompose) {
         const orderedLayers = sortLayersByZ(imageLayers);
         const onlyGif = orderedLayers.length === 1 && isGifFile(orderedLayers[0].file);
@@ -865,7 +917,7 @@ export default function DashboardPage() {
       setStatus("Sending...");
       const result = await sendMessageBatch(
         uploads.map(upload => ({ receiverId: upload.receiver_id, messageId: upload.message_id })),
-        { durationMs: duration, layout: sendLayout, delayMs, fadeInMs, fadeOutMs,
+        { durationMs: sendDuration, layout: sendLayout, delayMs, fadeInMs, fadeOutMs,
           audioDelayMs: hasSound ? sendAudioDelay : 0,
           captionLayout: sendOverlayCaption ? captionLayout : undefined },
       );
@@ -907,13 +959,14 @@ export default function DashboardPage() {
     let uploadFile = file ?? soundFile;
     if (!hasLayers && !uploadFile && !importedVideo) return;
     try {
-      const remoteVideo = importedVideo && importJob ? videoRecipe(importJob) : undefined;
-      if (importedVideo && importJob?.media_url && !remoteVideo) {
+      const remoteVideo = importedVideo && importJob ? videoRecipe(importJob, duration) : undefined;
+      if (local?.cut || (importedVideo && importJob?.media_url && !remoteVideo)) {
         // Download only on explicit local saving, never during a normal send.
-        const prepared = await ensureFreshImport(importJob);
-        const response = await fetch(apiUrl(prepared.media_url!), { credentials: "include" });
+        const prepared = local ? await localVideo.ready(local.file) : await ensureFreshImport(importJob!);
+        if (!prepared?.media_url) return;
+        const response = await fetch(apiUrl(prepared.media_url), { credentials: "include" });
         if (!response.ok) throw new Error("Could not save the video; import it again");
-        const name = (importJob.title || "Video excerpt").replace(/[\\/:*?"<>|]/g, "_");
+        const name = (local?.file.name.replace(/\.[^.]+$/, "") || importJob?.title || "Video excerpt").replace(/[\\/:*?"<>|]/g, "_");
         uploadFile = new File([await response.blob()], name + ".mp4", { type: "video/mp4" });
       }
       if (hasLayers) {
@@ -961,10 +1014,12 @@ export default function DashboardPage() {
 
   async function loadSavedPing(id: string) {
     if (importWorkRef.current || loading || preparingVideo) return;
+    cancelLocalSend();
     importWorkRef.current = true;
     try {
     const saved = await getSavedPing(id);
     if (!saved) return;
+    localVideo.remove();
     if (importJob) await api.cancelImport(importJob.id).catch(() => undefined);
     setImportJob(null);
 
@@ -1017,11 +1072,7 @@ export default function DashboardPage() {
         loadedVideo = true;
         if (clippingEnabled) {
           retainedVideoRef.current = mediaFile;
-          setFile(null);
-          setPreparingVideo(true);
-          try { setImportJob(await api.uploadVideoSource(mediaFile)); }
-          catch (err) { setStatus(err instanceof Error ? err.message : "Could not upload the video"); return; }
-          finally { setPreparingVideo(false); }
+          setFile(mediaFile); localVideo.start(mediaFile);
         } else setFile(mediaFile);
         setSoundFile(sound);
       } else {
@@ -1271,10 +1322,10 @@ export default function DashboardPage() {
                               onActiveLayerChange={setActiveLayerId}
                               large
                             />
-                          ) : editorPreviewUrl ? (
+                          ) : (local ? local.poster : editorPreviewUrl) ? (
                             <MediaLayoutEditor
-                              previewUrl={editorPreviewUrl}
-                              isVideo={editorPreviewIsVideo}
+                              previewUrl={(local ? local.poster : editorPreviewUrl)!}
+                              isVideo={!local && editorPreviewIsVideo}
                               isAudio={false}
                               layout={layout}
                               onChange={handleLayoutChange}
@@ -1286,7 +1337,7 @@ export default function DashboardPage() {
                           ) : (
                             <div className="compose-preview-editor flex h-full w-full items-center justify-center">
                               <div className="compose-preview-frame flex h-full w-full items-center justify-center">
-                                <LoadingDots label="Loading preview…" />
+                                {local ? <span className="text-sm text-slate-400">{local.file.name}</span> : <LoadingDots label="Loading preview…" />}
                               </div>
                             </div>
                           )
@@ -1325,7 +1376,13 @@ export default function DashboardPage() {
                   event.target.value = "";
                   if (files.length) ingestDroppedFiles(files);
                 }} />
-                <TikTokImport job={importJob} clipping={clippingEnabled} disabled={loading || preparingVideo} onPrepareEdit={ensureFreshImport} onReplace={() => replacementInputRef.current?.click()} onChange={next => {
+                <TikTokImport job={importJob} clipping={clippingEnabled} disabled={loading || preparingVideo} onPrepareEdit={ensureFreshImport} onReplace={() => replacementInputRef.current?.click()} onStart={() => {
+                  if (local) { cancelLocalSend(); localVideo.remove(); setFile(null); }
+                }} onChange={next => {
+                  if (localVideo.hasDraft()) {
+                    if (next) void api.cancelImport(next.id).catch(() => {});
+                    return;
+                  }
                   const firstReady = next?.status === "ready" && importJob?.status !== "ready";
                   if (next && next.id !== importJob?.id) setLayout(DEFAULT_LAYOUT);
                   setImportJob(next);
@@ -1335,7 +1392,6 @@ export default function DashboardPage() {
                   }
                 }} />
                 {preparingVideo && <p role="status" className="text-xs text-slate-400">Uploading video source…</p>}
-                {videoUploadError && !importJob && !preparingVideo && <p role="alert" className="text-sm text-red-300">{videoUploadError}</p>}
                 {!importLocksMedia && <FilePicker
                   label="File"
                   hint={isLayerCompose ? "Add images or paste with Ctrl+V" : "Image(s) or video — paste an image with Ctrl+V"}
@@ -1345,8 +1401,19 @@ export default function DashboardPage() {
                   onPickFiles={ingestDroppedFiles}
                   multiple
                   compact
+                  onTrim={local?.duration && !loading ? () => { cancelLocalSend(); localVideo.open(true); } : undefined}
                   displayLabel={isLayerCompose ? `${imageLayers.length} image layer(s)` : undefined}
                 />}
+                {local?.error && <div className="flex items-center gap-2">
+                  <p role="alert" className="text-xs text-red-300">{local.error}</p>
+                  <button type="button" className="btn-secondary shrink-0" onClick={localVideo.retry}>Retry</button>
+                </div>}
+                {local?.open && local.duration && <VideoClipDialog
+                  job={{ id: local.url, status: "awaiting_selection", duration_ms: null, media_url: null, error: null,
+                    source_duration_ms: local.duration, preview_url: local.localPreviewFailed ? local.job?.preview_url || local.url : local.url,
+                    start_ms: local.draftCut?.start, end_ms: local.draftCut?.end, volume: local.draftCut?.volume }}
+                  onClose={() => localVideo.open(false)} onChange={() => {}}
+                  onDraft={localVideo.setDraft} onSelect={localVideo.select} />}
                 {mobile && !importLocksMedia && <>
                   <button type="button" className="btn-secondary w-full" onClick={() => cameraInputRef.current?.click()}>
                     Take a photo
@@ -1392,6 +1459,10 @@ export default function DashboardPage() {
                   />
                 )}
                 <div className="flex flex-col gap-2 pt-1">
+                  {waitingForLocalSend && <div className="flex items-center justify-between gap-2" role="status">
+                    <span className="text-xs text-slate-400">Preparing to send…</span>
+                    <button type="button" className="btn-secondary" onClick={cancelLocalSend}>Cancel send</button>
+                  </div>}
                   <button type="submit" disabled={!canSend} className="btn-primary compose-inline-send w-full">
                     {loading
                       ? "Sending…"
@@ -1490,8 +1561,8 @@ export default function DashboardPage() {
                   <PrecisionSlider
                     label="Stay on screen"
                     value={duration}
-                    min={MIN_DURATION_MS}
-                    max={importedVideo ? Math.max(MIN_DURATION_MS, importJob?.duration_ms || MAX_DURATION_MS) : MAX_DURATION_MS}
+                    min={importJob?.media_kind === "slideshow" ? Math.max(MIN_DURATION_MS, Math.ceil((importJob.photo_count ?? 1) * 1000 / 30)) : MIN_DURATION_MS}
+                    max={local?.duration ? Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, local.cut ? local.cut.end - local.cut.start : local.duration)) : importedVideo && importJob?.platform !== "tiktok" && importJob?.media_kind !== "slideshow" ? Math.max(MIN_DURATION_MS, importJob?.duration_ms || MAX_DURATION_MS) : MAX_DURATION_MS}
                     step={100}
                     inputStep={10}
                     displayAsSeconds

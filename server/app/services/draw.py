@@ -110,9 +110,9 @@ def sanitize_duration_ms(raw: Any, default: int = DEFAULT_DURATION_MS) -> int:
     return clamp_ms(raw, default, min_ms=MIN_DURATION_MS, max_ms=MAX_DURATION_MS)
 
 
-def sanitize_draw_start(data: dict[str, Any]) -> dict[str, Any] | None:
+def sanitize_draw_start(data: dict[str, Any], allow_empty: bool = False) -> dict[str, Any] | None:
     receiver_ids = sanitize_receiver_ids(data.get("receiverIds"))
-    if not receiver_ids:
+    if not receiver_ids and not allow_empty:
         return None
     session_id = data.get("sessionId")
     if not isinstance(session_id, str) or not session_id.strip():

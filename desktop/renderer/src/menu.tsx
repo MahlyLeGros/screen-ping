@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import "./ui/theme.css";
 import { MonitorPicker, StatusDot } from "./ui/components";
 import {
-  IconBell,
   IconCoffee,
   IconDownload,
   IconExternal,
@@ -125,19 +124,23 @@ function Menu() {
 
       <div className="menu__sep" />
 
+      <div style={{ padding: "8px 12px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
+          <label htmlFor="receive-volume">Volume</label>
+          <output htmlFor="receive-volume">{Math.round(state.receiveVolume * 100)}%</output>
+        </div>
+        <div className="receive-volume">
+          <input id="receive-volume" type="range" min="0" max="100" step="1"
+            aria-label="Incoming ping volume" value={Math.round(state.receiveVolume * 100)}
+            onChange={event => set("receiveVolume", Number(event.target.value) / 100)} />
+        </div>
+      </div>
       <MenuItem
         icon={<IconPower />}
         label="Online"
         hint={state.online ? "ON" : "OFF"}
         hintTone={state.online ? "on" : undefined}
         onClick={() => set("online", !state.online)}
-      />
-      <MenuItem
-        icon={<IconBell />}
-        label="Incoming pings"
-        hint={state.paused ? "PAUSED" : "ON"}
-        hintTone={state.paused ? "warn" : "on"}
-        onClick={() => set("paused", !state.paused)}
       />
       <MenuItem
         icon={<IconRocket />}

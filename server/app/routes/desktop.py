@@ -42,7 +42,7 @@ def desktop_latest():
 
 @router.get("/next")
 def desktop_next(from_version: str = Query(default="0.0.0", alias="from")):
-    """Next installer the client should install (stepwise), not necessarily absolute latest."""
+    """Keep the legacy endpoint, but send clients directly to the latest installer."""
     return JSONResponse(
         content=next_update_payload(from_version.strip() or "0.0.0"),
         headers={"Cache-Control": "no-store, max-age=0"},

@@ -95,11 +95,12 @@ class DrawOverlayController {
 
     if (this.pingShowing) {
       // Ping already owns visibility / topmost — just make sure we stay up.
-      reinforceOverlayWindow(win);
+      reinforceOverlayWindow(win, true);
       return;
     }
 
     showOverlayWindow(win);
+    reinforceOverlayWindow(win, true);
     if (win.getOpacity() < 1) {
       win.setOpacity(1);
     }
@@ -115,7 +116,7 @@ class DrawOverlayController {
     applyOverlayTopMost(win);
     this.topMostTimer = setInterval(() => {
       if (!this.overlayWindow || this.overlayWindow.isDestroyed()) return;
-      reinforceOverlayWindow(this.overlayWindow);
+      reinforceOverlayWindow(this.overlayWindow, true);
     }, 800);
   }
 

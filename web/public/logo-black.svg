@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <title>Screen Ping</title>
+  <g stroke="#000" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="12" y="44" width="76" height="60" rx="12"/>
+    <path d="M50 105v10m-14 0h28M76 12a40 40 0 0 1 40 40M76 28a24 24 0 0 1 24 24M76 44a8 8 0 0 1 8 8"/>
+  </g>
+</svg>

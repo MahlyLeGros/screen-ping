@@ -92,12 +92,17 @@ export function showOverlayWindow(win: BrowserWindow) {
   applyOverlayTopMost(win);
   if (!win.isVisible()) {
     win.showInactive();
+    // showInactive can put the window behind fullscreen apps despite its old flag.
+    applyOverlayTopMost(win, process.platform === "win32");
   }
+  if (process.platform === "win32") win.moveTop();
 }
 
-/** Light check while ping is on screen — no moveTop, no setBounds. */
-export function reinforceOverlayWindow(win: BrowserWindow) {
+/** Restore z-order without focusing or resizing the overlay. */
+export function reinforceOverlayWindow(win: BrowserWindow, raise = false) {
   ensureOverlayShown(win);
+  // Another topmost window can cover us without clearing isAlwaysOnTop().
+  if (process.platform === "win32" || raise) win.moveTop();
 }
 
 /**

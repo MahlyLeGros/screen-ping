@@ -22,6 +22,7 @@ export interface DesktopState {
   connected: boolean;
   online: boolean;
   paused: boolean;
+  receiveVolume: number;
   launchAtLogin: boolean;
   alwaysOnTop: boolean;
   compact: boolean;
@@ -43,6 +44,7 @@ export interface DesktopState {
 export type SettingKey =
   | "online"
   | "paused"
+  | "receiveVolume"
   | "launchAtLogin"
   | "alwaysOnTop"
   | "compact"
@@ -91,6 +93,7 @@ export function buildDesktopState(connected: boolean): DesktopState {
     connected,
     online: store.get("online"),
     paused: store.get("paused"),
+    receiveVolume: store.get("receiveVolume"),
     launchAtLogin: store.get("launchAtLogin"),
     alwaysOnTop: store.get("alwaysOnTop"),
     compact: store.get("compact"),

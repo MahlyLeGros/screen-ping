@@ -80,6 +80,24 @@ function preloadMedia(payload: OverlayPayload): Promise<boolean> {
 }
 
 function OverlayApp() {
+  const [receiveVolume, setReceiveVolume] = useState(0);
+  useEffect(() => {
+    let active = true;
+    let changed = false;
+    const unsubscribe = window.electronAPI.onReceiveVolume(value => {
+      changed = true;
+      if (active) setReceiveVolume(value);
+    });
+    void window.electronAPI.getReceiveVolume().then(value => {
+      if (active && !changed) setReceiveVolume(value);
+    });
+    return () => { active = false; unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    document.querySelectorAll<HTMLMediaElement>('video, audio').forEach(media => {
+      media.volume = receiveVolume;
+    });
+  });
   const [session, setSession] = useState<DisplaySession | null>(null);
   const overlayAudioRef = useRef<HTMLAudioElement>(null);
   const sessionRef = useRef<DisplaySession | null>(null);
@@ -410,13 +428,15 @@ function OverlayApp() {
             <div key={payload.messageId} className="media-frame" style={frameStyle(layout)}>
               <div style={flipStyle(layout)}>
                 <video src={payload.mediaUrl} style={fitStyle!} muted={false} playsInline
+                  onLoadedMetadata={event => { event.currentTarget.volume = receiveVolume; }}
                   onError={() => window.electronAPI.notifyOverlayFailed(payload.messageId)} />
               </div>
             </div>
           )}
 
           {audioFullUrl && (
-            <audio ref={overlayAudioRef} key={audioFullUrl} src={audioFullUrl} style={{ display: "none" }} />
+            <audio ref={overlayAudioRef} key={audioFullUrl} src={audioFullUrl} style={{ display: "none" }}
+              onLoadedMetadata={event => { event.currentTarget.volume = receiveVolume; }} />
           )}
 
           {mediaReady && payload?.caption && captionLayout && (

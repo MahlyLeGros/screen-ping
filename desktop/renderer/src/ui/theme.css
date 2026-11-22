@@ -350,6 +350,11 @@ input {
   min-width: 0;
 }
 
+.receive-volume { display: flex; align-items: center; gap: 12px; }
+.receive-volume input { flex: 1; min-width: 0; accent-color: var(--violet); cursor: pointer; }
+.receive-volume input:focus-visible { outline: 2px solid var(--violet); outline-offset: 4px; }
+.receive-volume output { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
+
 .send__check input {
   accent-color: var(--violet);
 }

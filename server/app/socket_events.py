@@ -561,7 +561,12 @@ async def draw_start(sid, data):
         await sio.emit("draw:result", {"ok": False, "reason": "invalid_payload"}, to=sid)
         return
 
-    parsed = sanitize_draw_start(data)
+    raw_id = data.get("sessionId")
+    existing = get_session(raw_id.strip()[:64]) if isinstance(raw_id, str) else None
+    if existing and existing.get("senderId") != sender_id:
+        await sio.emit("draw:result", {"ok": False, "reason": "invalid_payload"}, to=sid)
+        return
+    parsed = sanitize_draw_start(data, allow_empty=existing is not None)
     if not parsed:
         await sio.emit("draw:result", {"ok": False, "reason": "invalid_payload"}, to=sid)
         return
@@ -572,8 +577,31 @@ async def draw_start(sid, data):
     finally:
         db.close()
 
-    if not allowed:
+    if not allowed and not existing:
         await sio.emit("draw:result", {"ok": False, "reason": "no_targets"}, to=sid)
+        return
+
+    if existing:
+        # Flush old points to their original audience; never replay them to newcomers.
+        pending = take_pending_stroke(sender_id)
+        if pending:
+            await _emit_draw_stroke_packet(sender_id, pending)
+        previous = list(existing["receiverIds"])
+        existing["receiverIds"] = allowed
+        existing["durationMs"] = parsed["durationMs"]
+        await _emit_draw_to_receivers(
+            [rid for rid in previous if rid not in allowed], "draw:end",
+            {"sessionId": parsed["sessionId"], "fromUserId": sender_id},
+        )
+        await _emit_draw_to_receivers(
+            [rid for rid in allowed if rid not in previous], "draw:begin",
+            {**parsed, "fromUserId": sender_id},
+        )
+        await sio.emit("draw:result", {
+            "ok": True, "action": "start", "sessionId": parsed["sessionId"],
+            "receiverIds": allowed,
+            "onlineIds": [rid for rid in allowed if presence_manager.desktop_sids_for_user(rid)],
+        }, to=sid)
         return
 
     # One active session per sender — end previous ones.

@@ -31,6 +31,7 @@ export function desktopStatesEqual(a: DesktopState, b: DesktopState): boolean {
     a.connected === b.connected &&
     a.online === b.online &&
     a.paused === b.paused &&
+    a.receiveVolume === b.receiveVolume &&
     a.launchAtLogin === b.launchAtLogin &&
     a.alwaysOnTop === b.alwaysOnTop &&
     a.compact === b.compact &&

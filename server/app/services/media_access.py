@@ -75,6 +75,12 @@ def sign_media_url(path: str | None, user_id: str, paths: list[str]) -> str | No
 
 
 def can_access_media(db: Session, user_id: str, storage_path: str) -> bool:
+    for job in db.query(MediaImport).filter(MediaImport.user_id == user_id,
+            MediaImport.slideshow_assets.contains(storage_path), MediaImport.expires_at > utcnow(),
+            MediaImport.status.notin_(("failed", "cancelled"))).all():
+        assets = json.loads(job.slideshow_assets)
+        if storage_path in assets.get("images", []) or storage_path == assets.get("music"):
+            return True
     if db.query(MediaImport.id).filter(MediaImport.user_id == user_id, MediaImport.source_path == storage_path,
                                       MediaImport.status.notin_(("cancelled", "failed")), MediaImport.expires_at > utcnow(),
                                       MediaImport.source_duration_ms.isnot(None)).first():
@@ -115,6 +121,11 @@ ACTIVE_MEDIA_STATUSES = (
 
 
 def media_path_still_in_use(db: Session, storage_path: str) -> bool:
+    for job in db.query(MediaImport).filter(MediaImport.slideshow_assets.contains(storage_path),
+            MediaImport.expires_at > utcnow(), MediaImport.status.notin_(("failed", "cancelled"))).all():
+        assets = json.loads(job.slideshow_assets)
+        if storage_path in assets.get("images", []) or storage_path == assets.get("music"):
+            return True
     if db.query(MediaImport.id).filter(MediaImport.source_path == storage_path,
                                       MediaImport.status.notin_(("cancelled", "failed")), MediaImport.expires_at > utcnow()).first():
         return True

@@ -8,6 +8,8 @@ export type { MediaLayout, CaptionLayout };
 export { DEFAULT_LAYOUT, frameStyle, flipStyle, mediaObjectFit };
 
 export interface ElectronAPI {
+  getReceiveVolume: () => Promise<number>;
+  onReceiveVolume: (callback: (volume: number) => void) => () => void;
   getSavedLogin: () => Promise<{ username: string; password: string; remember: boolean }>;
   login: (username: string, password: string, remember?: boolean) => Promise<{ ok: boolean }>;
   browserLogin: (mode: "google" | "web", remember?: boolean) => Promise<{ ok: boolean }>;

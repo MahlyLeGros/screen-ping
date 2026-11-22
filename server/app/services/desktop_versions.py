@@ -1,4 +1,4 @@
-"""Desktop version catalog — stepwise updates (N → N+1) instead of jumping to latest."""
+"""Desktop version catalog — existing clients update directly to the latest build."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def load_latest_meta() -> dict[str, str]:
 
 
 def next_version(from_version: str) -> str | None:
-    """Return the next published version after `from_version`, or None if up to date."""
+    """Return the newest published version, or None if already current or newer."""
     versions = load_versions()
     if not versions:
         latest = load_latest_meta().get("version")
@@ -81,7 +81,7 @@ def next_version(from_version: str) -> str | None:
             return latest
         return None
     newer = [v for v in versions if is_version_older(from_version, v)]
-    return newer[0] if newer else None
+    return newer[-1] if newer else None
 
 
 def absolute_latest() -> str | None:

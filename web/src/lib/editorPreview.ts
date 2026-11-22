@@ -122,7 +122,7 @@ async function seekVideo(video: HTMLVideoElement, time: number): Promise<void> {
   await waitForVideoEvent(video, "seeked", 8000);
 }
 
-async function captureVideoThumbnail(blobUrl: string, firstFrame = false): Promise<string> {
+async function captureVideoThumbnail(blobUrl: string, firstFrame = false, startMs = 0): Promise<string> {
   const video = document.createElement("video");
   video.muted = true;
   video.playsInline = true;
@@ -136,7 +136,7 @@ async function captureVideoThumbnail(blobUrl: string, firstFrame = false): Promi
   }
 
   if (video.readyState < 2) await waitForVideoEvent(video, "loadeddata", 15000);
-  const seekTime = firstFrame ? 0 :
+  const seekTime = firstFrame ? startMs / 1000 :
     Number.isFinite(video.duration) && video.duration > 0
       ? Math.min(0.1, video.duration * 0.01)
       : 0.001;
@@ -159,8 +159,8 @@ async function captureVideoThumbnail(blobUrl: string, firstFrame = false): Promi
 }
 
 /** Only decode a still for remote imports; never play video in the editor. */
-export async function createRemoteVideoPreviewUrl(mediaUrl: string): Promise<EditorPreview> {
-  return { url: await captureVideoThumbnail(mediaUrl, true), isVideo: false };
+export async function createRemoteVideoPreviewUrl(mediaUrl: string, startMs = 0): Promise<EditorPreview> {
+  return { url: await captureVideoThumbnail(mediaUrl, true, startMs), isVideo: false };
 }
 
 function imagePreservesAlpha(mime: string): boolean {

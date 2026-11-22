@@ -21,8 +21,9 @@ function PreviewIcon({ kind }: { kind: "start" | "back" | "play" | "pause" | "fo
   </svg>;
 }
 
-export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
+export default function VideoClipDialog({ job, onClose, onChange, onDraft, onSelect }: {
   job: MediaImportJob; onClose: () => void; onChange: (job: MediaImportJob) => void; onDraft: (start: number, end: number, volume: number) => void;
+  onSelect?: (start: number, end: number, volume: number) => void;
 }) {
   const sourceMs = job.source_duration_ms || 0;
   const minLength = Math.min(2000, sourceMs);
@@ -131,6 +132,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     if (next >= end) video.current?.pause();
   }
   async function confirm() {
+    if (onSelect) { onSelect(start, end, volume); onClose(); return; }
     setBusy(true); setError("");
     try { onChange(await api.selectVideoClip(job.id, start, end, volume)); onClose(); }
     catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the excerpt"); }
@@ -146,7 +148,7 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft }: {
     <div ref={dialog} className="clip-dialog panel" role="dialog" aria-modal="true" aria-label="Choose your excerpt">
       <button type="button" className="clip-close-button" disabled={busy} onClick={onClose} aria-label="Close excerpt selection">×</button>
       <video ref={video} src={job.preview_url || undefined} muted={volume === 0} playsInline preload="metadata" className="clip-source-video"
-        onLoadedMetadata={() => { setPreviewFailed(false); if (video.current) video.current.currentTime = start / 1000; }}
+        onLoadedMetadata={() => { setPreviewFailed(false); setError(""); if (video.current) video.current.currentTime = start / 1000; }}
         onError={() => { setPreviewFailed(true); setError("The preview could not load. Close this menu and import the video again."); }}
         onPlay={() => { setPlaying(true); syncPreview(); }} onPause={() => setPlaying(false)} onEnded={() => setPlaying(false)}
         onTimeUpdate={syncPreview} />

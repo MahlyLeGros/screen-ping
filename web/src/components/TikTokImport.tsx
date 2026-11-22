@@ -3,8 +3,8 @@ import { api, type MediaImportJob } from "../lib/api";
 import VideoClipDialog from "./VideoClipDialog";
 import { useSmoothedProgress } from "../lib/useSmoothedProgress";
 
-export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, disabled = false, clipping = false }: {
-  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; onReplace: () => void; onPrepareEdit: (job: MediaImportJob) => Promise<MediaImportJob>; disabled?: boolean; clipping?: boolean;
+export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, onStart, disabled = false, clipping = false }: {
+  job: MediaImportJob | null; onChange: (job: MediaImportJob | null) => void; onReplace: () => void; onPrepareEdit: (job: MediaImportJob) => Promise<MediaImportJob>; onStart?: () => void; disabled?: boolean; clipping?: boolean;
 }) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState("");
@@ -41,6 +41,8 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
     finally { setBusy(false); }
   }
   async function start() {
+    if (disabled) return;
+    onStart?.();
     setBusy(true); setError("");
     try {
       if (job) await api.cancelImport(job.id).catch(() => undefined);
@@ -55,7 +57,7 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
     <label className="field-label" htmlFor="tiktok-url">TikTok link</label>
     <div className="flex gap-2">
       <input ref={urlInput} id="tiktok-url" type="url" inputMode="url" autoCapitalize="none" autoCorrect="off"
-        className="field-input min-w-0 flex-1" placeholder="Paste a TikTok video link" value={url}
+        className="field-input min-w-0 flex-1" placeholder="Paste a TikTok link" value={url}
         onChange={event => setUrl(event.target.value)}
         onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); if (!busy && !active) void start(); } }} />
       <button type="button" className="btn-secondary" disabled={!url.trim() || busy || active || disabled} onClick={() => void start()}>Import</button>
@@ -66,7 +68,7 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
     </p>}
     {(job?.status === "ready" || job?.status === "awaiting_selection") && <div>
       <span className="field-label">File</span>
-      <div className="upload-zone px-2.5 py-2 pr-[6.5rem]">
+      <div className={`upload-zone px-2.5 py-2 ${job.media_kind === "slideshow" ? "pr-14" : "pr-[6.5rem]"}`}>
         <button type="button" className="flex min-w-0 flex-1 items-center gap-2.5 bg-transparent text-left"
           aria-label="Replace selected media" disabled={busy || disabled} onClick={onReplace}>
           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] bg-[rgb(8_8_12/0.55)] text-sm text-slate-400">{job.status === "awaiting_selection" ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" /></svg> : "✓"}</span>
@@ -76,7 +78,7 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
           </span>
         </button>
         <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center">
-        {job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Trim video" title="Trim video" disabled={busy || disabled}
+        {job.media_kind !== "slideshow" && job.preview_url && Boolean(job.source_duration_ms) && <button type="button" aria-label="Trim video" title="Trim video" disabled={busy || disabled}
           className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded bg-transparent p-2 text-slate-500 transition hover:text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-400"
           onClick={() => void edit()}>
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -95,7 +97,8 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
         </div>
       </div>
     </div>}
-    {clipOpen && job?.preview_url && <VideoClipDialog key={job.id} job={job} onClose={() => setClipOpen(false)}
+    {job?.media_kind === "slideshow" && !job.has_music && job.status === "ready" && <p role="status" className="text-xs text-slate-400">Public music unavailable — slideshow without sound.</p>}
+    {clipOpen && job?.preview_url && job.media_kind !== "slideshow" && <VideoClipDialog key={job.id} job={job} onClose={() => setClipOpen(false)}
       onChange={onChange} onDraft={(start_ms, end_ms, volume) => onChange({ ...job, start_ms, end_ms, volume,
         status: job.status === "ready" && (start_ms !== job.start_ms || end_ms !== job.end_ms || volume !== (job.volume ?? 1)) ? "awaiting_selection" : job.status })} />}
     {job && !active && job.status !== "cancelled" && job.status !== "ready" && job.status !== "awaiting_selection" && <button type="button" className="btn-secondary" disabled={busy} onClick={() => {

@@ -1,0 +1,40 @@
+const {app,BrowserWindow,ipcMain}=require('electron');
+const fs=require('fs'),path=require('path'),assert=require('assert/strict');
+const root=path.join(app.getPath('temp'),'screenping-volume-test-'+process.pid);
+fs.mkdirSync(root,{recursive:true});app.setPath('userData',root);
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+app.whenReady().then(async()=>{
+ const store=require('../dist/main/store').default;
+ assert.equal(store.get('receiveVolume'),1);
+ store.set('receiveVolume',.35);
+ const Store=require('electron-store');assert.equal(new Store().get('receiveVolume'),.35);
+ ipcMain.handle('overlay:get-volume',()=>store.get('receiveVolume'));
+ const state={version:'test',serverUrl:'https://screenping.xyz',packaged:false,username:'Test',userId:'test',online:true,connected:true,paused:false,receiveVolume:.35,launchAtLogin:false,compact:false,alwaysOnTop:false,overlayDisplayId:null,displays:[],update:{state:'idle'},latestVersion:null,outdated:false};
+ ipcMain.handle('app:get-state',()=>state);
+ ipcMain.on('app:set',(_,data)=>{assert.equal(data.key,'receiveVolume');state.receiveVolume=data.value;});
+ const options={show:false,width:800,height:900,webPreferences:{preload:path.resolve(__dirname,'../dist/main/preload.js'),contextIsolation:true,backgroundThrottling:false,offscreen:true}};
+ const ui=new BrowserWindow({...options,width:262,height:600}),overlay=new BrowserWindow(options);
+ ui.webContents.on('console-message',(_,level,message)=>{if(level>=2)console.error(message)});
+ ipcMain.on('menu:resize',()=>{});
+ await ui.loadFile(path.resolve(__dirname,'../dist/renderer/menu.html'));
+ await wait(300);
+ const slider=`document.querySelector('[aria-label="Incoming ping volume"]')`;
+ assert.equal(await ui.webContents.executeJavaScript(`${slider}.value`),'35');
+ assert(await ui.webContents.executeJavaScript(`(${slider}.compareDocumentPosition(Array.from(document.querySelectorAll('button')).find(button=>button.textContent.includes('Online'))) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0`),'Volume appears before Online');
+ assert.equal(await ui.webContents.executeJavaScript(`document.body.textContent.includes('Incoming pings')`),false);
+ assert.equal(await ui.webContents.executeJavaScript(`Array.from(document.querySelectorAll('button')).some(button=>button.textContent.includes('Online'))`),true);
+ fs.writeFileSync(path.join(root,'menu-volume.png'),(await ui.webContents.capturePage()).toPNG());
+ console.log('MENU_PREVIEW',path.join(root,'menu-volume.png'));
+ await ui.webContents.executeJavaScript(`(()=>{const el=${slider};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'0');el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+ await wait(100);assert.equal(state.receiveVolume,0);
+ await overlay.loadFile(path.resolve(__dirname,'../dist/renderer/overlay.html'));await wait(300);
+ await overlay.webContents.executeJavaScript(`(()=>{const a=document.createElement('audio');a.id='test-audio';document.body.append(a);const v=document.createElement('video');v.id='test-video';document.body.append(v);})()`);
+ for(const volume of [0,.25,1]){
+  overlay.webContents.send('overlay:volume',volume);await wait(100);
+  assert.deepEqual(await overlay.webContents.executeJavaScript(`['test-audio','test-video'].map(id=>document.getElementById(id).volume)`),[volume,volume]);
+ }
+ await ui.loadFile(path.resolve(__dirname,'../dist/renderer/menu.html'));await wait(200);
+ assert.equal(await ui.webContents.executeJavaScript(`${slider}.value`),'0');
+ console.log('PASS tray-menu volume, reopening retains value, persisted setting, live audio/video volume including mute');
+ ui.destroy();overlay.destroy();app.exit(0);
+}).catch(error=>{console.error(error);app.exit(1)});

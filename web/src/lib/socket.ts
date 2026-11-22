@@ -267,6 +267,7 @@ export function startDrawSession(options: DrawStartOptions): Promise<DrawResult>
 
     function onResult(data: DrawResult) {
       if (data.action && data.action !== "start") return;
+      if (data.sessionId && data.sessionId !== options.sessionId) return;
       clearTimeout(timeout);
       sock.off("draw:result", onResult);
       resolve(data);

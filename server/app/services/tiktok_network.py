@@ -8,7 +8,7 @@ import re
 import socket
 from urllib.parse import urlsplit, urlunsplit
 
-ALLOWED_DOMAINS = ("tiktok.com", "tiktokv.com", "tiktokcdn.com", "tiktokcdn-us.com", "byteoversea.com", "ibytedtos.com")
+ALLOWED_DOMAINS = ("tiktok.com", "tiktokv.com", "tiktokcdn.com", "tiktokcdn-us.com", "tiktokcdn-eu.com", "byteoversea.com", "ibytedtos.com")
 
 
 def allowed_host(host: str, domains=None) -> bool:
@@ -16,7 +16,7 @@ def allowed_host(host: str, domains=None) -> bool:
     return any(host == domain or host.endswith("." + domain) for domain in (domains or ALLOWED_DOMAINS))
 
 
-def validate_url(url: str, *, initial: bool = False) -> str:
+def validate_url(url: str, *, initial: bool = False, allow_photo: bool = False) -> str:
     if len(url) > 2048 or any(ord(c) < 33 for c in url):
         raise ValueError("Invalid TikTok link")
     parsed = urlsplit(url)
@@ -28,10 +28,11 @@ def validate_url(url: str, *, initial: bool = False) -> str:
     if initial:
         short = host in ("vm.tiktok.com", "vt.tiktok.com") and re.fullmatch(r"/[A-Za-z0-9]+/?", parsed.path)
         video = host in ("tiktok.com", "www.tiktok.com", "m.tiktok.com") and re.fullmatch(r"/@[^/]+/video/[0-9]+/?", parsed.path)
+        photo = allow_photo and host in ("tiktok.com", "www.tiktok.com", "m.tiktok.com") and re.fullmatch(r"/@[^/]+/photo/[0-9]+/?", parsed.path)
         share = host == "www.tiktok.com" and re.fullmatch(r"/t/[A-Za-z0-9]+/?", parsed.path)
-        if not (short or video or share):
+        if not (short or video or share or photo):
             raise ValueError("Paste a video link, not a profile, live or photo post")
-        if video:
+        if video or photo:
             parsed = parsed._replace(netloc="www.tiktok.com")
     return urlunsplit(("https", parsed.netloc, parsed.path, parsed.query, ""))
 
