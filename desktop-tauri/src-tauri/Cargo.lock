@@ -3733,6 +3733,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tokio",
+ "webview2-com",
  "windows",
 ]
 

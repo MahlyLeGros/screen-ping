@@ -68,11 +68,24 @@ impl Host {
     }
 }
 
+/// Our raw `ShowWindow(SW_SHOWNOACTIVATE)` (no focus steal) skips the
+/// WebView2 controller, which then still treats the page as hidden: GIFs
+/// and requestAnimationFrame stay frozen. Mark it visible ourselves.
+pub fn mark_webview_visible(win: &WebviewWindow) {
+    #[cfg(windows)]
+    let _ = win.with_webview(|pw| unsafe {
+        let _ = pw.controller().SetIsVisible(true);
+    });
+    #[cfg(not(windows))]
+    let _ = win;
+}
+
 impl OverlayHost for Host {
     fn show(&self) {
         let Some(win) = self.win() else { return };
         self.position(&win);
         let _ = win.set_ignore_cursor_events(true);
+        mark_webview_visible(&win);
         #[cfg(windows)]
         if let Ok(hwnd) = win.hwnd() {
             crate::win32::show_topmost_no_activate(hwnd);
@@ -90,6 +103,7 @@ impl OverlayHost for Host {
 
     fn reinforce(&self) {
         let Some(win) = self.win() else { return };
+        mark_webview_visible(&win);
         #[cfg(windows)]
         if let Ok(hwnd) = win.hwnd() {
             crate::win32::show_topmost_no_activate(hwnd);

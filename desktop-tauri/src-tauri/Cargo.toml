@@ -27,6 +27,8 @@ log = "0.4"
 base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
+# Same version as wry's, to reach the WebView2 controller.
+webview2-com = "0.39"
 windows = { version = "0.62", features = [
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",

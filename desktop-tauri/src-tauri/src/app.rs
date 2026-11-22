@@ -222,6 +222,7 @@ impl App {
             crate::win32::make_tool_window(hwnd);
             crate::win32::show_topmost_no_activate(hwnd);
         }
+        crate::host::mark_webview_visible(&audio);
         Ok(())
     }
 
