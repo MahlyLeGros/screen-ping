@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("electronAPI", {
+  getReceiveVolume: () => ipcRenderer.invoke("overlay:get-volume"),
+  onReceiveVolume: (callback: (volume: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, volume: number) => callback(volume);
+    ipcRenderer.on("overlay:volume", listener);
+    return () => ipcRenderer.removeListener("overlay:volume", listener);
+  },
   getSavedLogin: () => ipcRenderer.invoke("auth:get-saved-login"),
   login: (username: string, password: string, remember = true) =>
     ipcRenderer.invoke("auth:login", { username, password, remember }),

@@ -129,6 +129,17 @@ function ReceiveView({ state }: { state: DesktopState }) {
         </Button>
       </Card>
 
+      <Card title="Volume">
+        <div className="receive-volume">
+          <input type="range" min="0" max="100" step="1"
+            aria-label="Incoming ping volume"
+            value={Math.round(state.receiveVolume * 100)}
+            onChange={event => window.desktopAPI.set("receiveVolume", Number(event.target.value) / 100)} />
+          <output>{Math.round(state.receiveVolume * 100)}%</output>
+        </div>
+        <p className="card__desc">Volume for all received videos and sounds. 0% mutes pings.</p>
+      </Card>
+
       <Card title="Show pings on">
         {state.displays.length > 1 ? (
           <>

@@ -80,6 +80,8 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
   const drawingRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const receiverIdsRef = useRef(receiverIds);
+  const targetSyncRef = useRef<Promise<void>>(Promise.resolve());
+  const appliedTargetsRef = useRef("");
   const colorRef = useRef(color);
   const widthRef = useRef(width);
   const durationRef = useRef(durationMs);
@@ -122,7 +124,26 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
   }, [sessionId]);
   useEffect(() => {
     receiverIdsRef.current = receiverIds;
-  }, [receiverIds]);
+    const id = sessionIdRef.current;
+    const key = JSON.stringify(receiverIds);
+    if (!id || key === appliedTargetsRef.current) return;
+    targetSyncRef.current = targetSyncRef.current.then(async () => {
+      if (sessionIdRef.current !== id || JSON.stringify(receiverIdsRef.current) !== key) return;
+      const result = await startDrawSession({
+        sessionId: id, receiverIds, durationMs: durationRef.current,
+        color: colorRef.current, width: widthRef.current,
+      });
+      if (sessionIdRef.current !== id) return;
+      if (!result.ok) throw new Error("Could not update draw recipients.");
+      appliedTargetsRef.current = key;
+      const online = result.onlineIds?.length ?? 0;
+      setStatus(receiverIds.length === 0 ? "Select a recipient to continue sharing."
+        : online === 0 ? "Session ready — waiting for their desktop app…"
+        : `Live to ${online} screen${online === 1 ? "" : "s"}.`);
+    }).catch((err) => {
+      if (sessionIdRef.current === id) setStatus(err instanceof Error ? err.message : "Could not update draw recipients.");
+    });
+  }, [receiverIds, sessionId]);
   useEffect(() => {
     colorRef.current = color;
   }, [color]);
@@ -146,7 +167,6 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     // Scale a fixed box — changing width/height every frame snapped to integer
     // CSS pixels and made the resize look stepped / jerky.
     el.style.setProperty("--brush-scale", String(size / BRUSH_RING_BASE_PX));
-    el.style.setProperty("--brush-color", colorRef.current);
   }
 
   function scheduleBrushPaint() {
@@ -308,7 +328,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
       const sid = sessionIdRef.current;
       const ids = receiverIdsRef.current;
       if (sid && ids.length) {
-        void endDrawSession(sid, ids).catch(() => undefined);
+        void targetSyncRef.current.then(() => endDrawSession(sid, ids)).catch(() => undefined);
       }
     };
   }, []);
@@ -442,7 +462,10 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
   }, []);
 
   async function ensureSession() {
-    if (sessionIdRef.current) return sessionIdRef.current;
+    if (sessionIdRef.current) {
+      await targetSyncRef.current;
+      return sessionIdRef.current;
+    }
     if (receiverIdsRef.current.length === 0) {
       setStatus("Pick at least one online friend (or yourself).");
       return null;
@@ -450,9 +473,10 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     setBusy(true);
     try {
       const nextId = makeSessionId();
+      const initialTargets = [...receiverIdsRef.current];
       const result = await startDrawSession({
         sessionId: nextId,
-        receiverIds: receiverIdsRef.current,
+        receiverIds: initialTargets,
         durationMs: durationRef.current,
         color: colorRef.current,
         width: widthRef.current,
@@ -462,6 +486,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
         return null;
       }
       setSessionId(result.sessionId);
+      appliedTargetsRef.current = JSON.stringify(initialTargets);
       sessionIdRef.current = result.sessionId;
       const online = result.onlineIds?.length ?? 0;
       setStatus(
@@ -707,6 +732,10 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
                 )}
                 <div ref={brushCursorRef} className="draw-brush-cursor" hidden aria-hidden>
                   <span className="draw-brush-cursor-ring" />
+                  <svg className="draw-brush-cursor-crosshair" viewBox="0 0 24 24" aria-hidden="true">
+                    <path className="cursor-outline" d="M12 2v5m0 10v5M2 12h5m10 0h5" />
+                    <path className="cursor-mark" d="M12 2v5m0 10v5M2 12h5m10 0h5" />
+                  </svg>
                 </div>
               </div>
             </div>
@@ -728,7 +757,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
               }}>Clear drawing</button>
               <button type="button" className="btn-secondary" disabled={!sessionId} onClick={() => {
                 const id = sessionIdRef.current;
-                if (id) void endDrawSession(id, receiverIdsRef.current).catch(() => setStatus("Could not stop; try again"));
+                if (id) void targetSyncRef.current.then(() => endDrawSession(id, receiverIdsRef.current)).catch(() => setStatus("Could not stop; try again"));
                 sessionIdRef.current = null; setSessionId(null); drawingRef.current = false;
                 pendingPointsRef.current = []; strokesRef.current = [];
               }}>Stop</button>

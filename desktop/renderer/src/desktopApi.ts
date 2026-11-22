@@ -25,6 +25,7 @@ export interface DesktopState {
   connected: boolean;
   online: boolean;
   paused: boolean;
+  receiveVolume: number;
   launchAtLogin: boolean;
   alwaysOnTop: boolean;
   compact: boolean;
@@ -43,7 +44,7 @@ export interface DesktopState {
   outdated: boolean;
 }
 
-export type SettingKey = "online" | "paused" | "launchAtLogin" | "alwaysOnTop" | "compact" | "overlayDisplayId";
+export type SettingKey = "online" | "paused" | "receiveVolume" | "launchAtLogin" | "alwaysOnTop" | "compact" | "overlayDisplayId";
 
 export type AppTab = "receive" | "friends" | "send";
 

@@ -32,7 +32,7 @@ def validate_link(url):
     if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
         raise ValueError("Use a public HTTPS video link")
     if host in ("www.tiktok.com", "tiktok.com", "m.tiktok.com", "vm.tiktok.com", "vt.tiktok.com"):
-        return "tiktok", validate_url(url, initial=True)
+        return "tiktok", validate_url(url, initial=True, allow_photo=True)
     if host in ("youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"):
         query = parse_qs(parsed.query)
         if "list" in query:
@@ -122,6 +122,19 @@ def clip_video(source, final, start_ms, end_ms, volume=1.0):
     if final.stat().st_size > FINAL_BYTES or abs(result - length) > 200:
         raise ValueError("Could not prepare an accurate clip within the size limit")
     return {"duration_ms": min(result, length)}
+
+
+def repeat_video(final, duration_ms):
+    if type(duration_ms) is not int or not 2000 <= duration_ms <= 30000:
+        raise ValueError("Loop duration must be between 2 and 30 seconds")
+    repeated = final.with_name("repeated.mp4")
+    run_ffmpeg(["-stream_loop", "-1", "-i", str(final), "-t", str(duration_ms / 1000),
+                "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "28",
+                "-maxrate", "1200k", "-bufsize", "2400k", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "96k",
+                "-threads", "2", "-movflags", "+faststart", "-y", str(repeated)], 170)
+    if repeated.stat().st_size > FINAL_BYTES or abs(source_duration(probe(repeated)) - duration_ms) > 100:
+        raise ValueError("Could not prepare an accurate video loop")
+    repeated.replace(final)
 
 
 def prepare_source(source, final):
@@ -214,8 +227,25 @@ if __name__ == "__main__":
     try:
         mode, source_arg, directory_arg = sys.argv[1:4]
         directory = Path(directory_arg)
-        if mode == "clip":
+        photo_assets = None
+        if mode == "remote" and validate_link(source_arg)[0] == "tiktok":
+            from app.services.tiktok_photos import fetch_photos
+            photo_assets = fetch_photos(source_arg, directory, os.environ.get("SCREENPING_PHOTO_ENABLED") == "true")
+        if mode == "slideshow" or photo_assets:
+            from app.services.tiktok_photos import render_slideshow
+            assets = json.loads(source_arg) if mode == "slideshow" else photo_assets
+            result = render_slideshow(assets, directory, float(sys.argv[4]) if mode == "slideshow" else 3, float(sys.argv[5]) if mode == "slideshow" else 1)
+            result["title"] = assets.get("title", "TikTok slideshow")
+            if photo_assets:
+                result["slideshow_assets"] = assets
+            import shutil
+            shutil.copyfile(directory / "ready.mp4", directory / "source.mp4")
+        elif mode == "clip":
             result = clip_video(Path(source_arg), directory / "ready.mp4", int(sys.argv[4]), int(sys.argv[5]), float(sys.argv[6]) if len(sys.argv) > 6 else 1.0)
+            repeat_ms = int(sys.argv[7]) if len(sys.argv) > 7 else 0
+            if repeat_ms:
+                repeat_video(directory / "ready.mp4", repeat_ms)
+                result["duration_ms"] = repeat_ms
         else:
             source, title = (Path(source_arg), "Uploaded video") if mode == "local" else fetch_source(source_arg, directory)
             original_duration = source_duration(probe(source))
@@ -229,6 +259,6 @@ if __name__ == "__main__":
         print(json.dumps(result), flush=True)
     except Exception as error:
         # Never expose signed source URLs, credentials or extractor diagnostics.
-        safe = str(error) if isinstance(error, ValueError) else "This public video could not be prepared. Upload the file manually."
+        safe = str(error) if isinstance(error, ValueError) else ("This TikTok slideshow could not be prepared; upload its images manually" if mode == "slideshow" or photo_assets else "This public video could not be prepared. Upload the file manually.")
         print(json.dumps({"error": safe[:255]}), flush=True)
         sys.exit(1)

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import json
 import threading
 from pathlib import Path
 from sqlalchemy import func, or_
@@ -33,6 +34,12 @@ class ClipRequest(BaseModel):
     start_ms: int = Field(strict=True)
     end_ms: int = Field(strict=True)
     volume: float = Field(default=1.0, ge=0, le=1, allow_inf_nan=False)
+    playback_duration_ms: int | None = Field(default=None, strict=True, ge=2000, le=30000)
+
+
+class SlideshowRequest(BaseModel):
+    seconds_per_photo: float = Field(default=3, ge=0.01, le=30, allow_inf_nan=False)
+    volume: float = Field(default=1, ge=0, le=1, allow_inf_nan=False)
 
 
 def platform_enabled(platform):
@@ -88,7 +95,15 @@ def owned_job(db: Session, user: User, job_id: str) -> MediaImport:
 
 
 def job_response(job: MediaImport):
+    assets = json.loads(job.slideshow_assets) if job.slideshow_assets else {}
+    images = assets.get("images", [])
+    from app.services.tiktok_photos import timing
+    effective = timing(len(images), job.seconds_per_photo or 3)[2] / 1000 / len(images) if images else None
     return {"id": job.id, "status": job.status, "error": job.error, "duration_ms": job.duration_ms, "progress_percent": job.progress_percent,
+            "media_kind": job.media_kind or "video", "seconds_per_photo": job.seconds_per_photo,
+            "effective_seconds_per_photo": effective, "photo_count": len(images), "has_music": bool(assets.get("music")),
+            "photo_urls": [sign_media_url(p, job.user_id, [p]) for p in images],
+            "music_url": sign_media_url(assets["music"], job.user_id, [assets["music"]]) if assets.get("music") else None,
             "media_url": sign_media_url(job.storage_path, job.user_id, [job.storage_path]) if job.status == "ready" else None,
             "platform": job.platform or "tiktok", "title": job.title, "source_url": job.url if job.platform != "local" else None,
             "expires_at": job.expires_at.isoformat(),
@@ -107,6 +122,8 @@ def start_import(body: ImportRequest, user: User = Depends(get_current_user), db
             raise HTTPException(400, str(exc)) from exc
         if not platform_enabled(platform):
             raise HTTPException(503, "Imports from this platform are currently unavailable; upload a file instead")
+        if platform == "tiktok" and "/photo/" in url and not settings.photo_import_allowed(user.username):
+            raise HTTPException(503, "TikTok photo import is currently unavailable; upload the images manually")
         if not check_upload_rate_limit(user.id):
             raise HTTPException(429, "Too many imports; please wait")
         with _queue_lock:
@@ -176,10 +193,14 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
     if not settings.video_clip_enabled:
         raise HTTPException(503, "Video clipping is currently unavailable")
     job = owned_job(db, user, job_id)
+    if job.media_kind == "slideshow":
+        raise HTTPException(400, "Use slideshow settings to keep every photo in order")
     if job.status not in ("awaiting_selection", "ready") or not job.source_path or not job.source_duration_ms:
         raise HTTPException(409, "Wait until the source video is ready")
     try:
         validate_clip(job.source_duration_ms, body.start_ms, body.end_ms)
+        if body.playback_duration_ms is not None and (job.platform != "tiktok" or body.playback_duration_ms < body.end_ms - body.start_ms):
+            raise ValueError("Only TikTok clips can repeat, up to 30 seconds, without shortening the selected clip")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     if not check_upload_rate_limit(user.id):
@@ -190,6 +211,27 @@ def select_clip(job_id: str, body: ClipRequest, user: User = Depends(get_current
             raise HTTPException(429, "Processing queue full; try again shortly")
         job.start_ms = body.start_ms; job.end_ms = body.end_ms
         job.volume = body.volume
+        job.duration_ms = body.playback_duration_ms
+        job.status = "queued_clip"; job.error = None; job.progress_percent = 0
+        job.expires_at = utcnow() + timedelta(minutes=15)
+        db.commit()
+    return job_response(job)
+
+
+@router.post("/{job_id}/slideshow")
+def select_slideshow(job_id: str, body: SlideshowRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not settings.video_clip_enabled or not settings.photo_import_allowed(user.username):
+        raise HTTPException(503, "TikTok photo import is currently unavailable; upload the images manually")
+    job = owned_job(db, user, job_id)
+    if job.media_kind != "slideshow" or not job.slideshow_assets or job.status not in ("ready", "awaiting_selection"):
+        raise HTTPException(409, "Wait until the photos are ready")
+    if not check_upload_rate_limit(user.id):
+        raise HTTPException(429, "Too many edits; please wait")
+    with _queue_lock:
+        active = db.query(MediaImport).filter(MediaImport.status.in_(("queued", "fetching", "optimizing", "uploading", "queued_clip", "cropping")))
+        if active.count() >= 20 or active.filter(MediaImport.user_id == user.id).count() >= 2:
+            raise HTTPException(429, "Processing queue full; try again shortly")
+        job.seconds_per_photo = body.seconds_per_photo; job.volume = body.volume
         job.status = "queued_clip"; job.error = None; job.progress_percent = 0
         job.expires_at = utcnow() + timedelta(minutes=15)
         db.commit()

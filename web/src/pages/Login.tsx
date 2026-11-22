@@ -13,7 +13,7 @@ import PasswordInput from "../components/PasswordInput";
 import SupportKofi from "../components/SupportKofi";
 
 export default function LoginPage() {
-  useDocumentTitle("Log in");
+  useDocumentTitle("");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const usernameId = useId();
@@ -188,6 +188,7 @@ export default function LoginPage() {
             </p>
           </div>
 
+          <div data-nosnippet>
           {verifying ? (
             <form onSubmit={handleVerify} className="space-y-3" noValidate>
               <div>
@@ -446,6 +447,7 @@ export default function LoginPage() {
               {isRegister ? "Already have an account? Log in" : "Need an account? Register"}
             </button>
           )}
+          </div>
         </div>
 
         {!linkingDesktop && (

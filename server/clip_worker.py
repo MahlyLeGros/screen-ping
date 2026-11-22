@@ -12,9 +12,9 @@ import uuid
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import MediaImport, utcnow
+from app.models import MediaImport, User, utcnow
 from app.services.media_access import delete_upload_file, media_path_still_in_use, resolve_upload_file
-from app.services.video_import import FINAL_BYTES
+from app.services.video_import import FINAL_BYTES, SOURCE_BYTES
 from import_worker import process_job as process_legacy, terminate_tree
 
 
@@ -24,6 +24,10 @@ def enabled(platform):
 
 def clean_job(db, job):
     paths = [job.source_path, job.storage_path]
+    if job.slideshow_assets:
+        assets = json.loads(job.slideshow_assets)
+        paths += assets.get("images", []) + ([assets["music"]] if assets.get("music") else [])
+    job.slideshow_assets = None
     job.source_path = job.storage_path = None
     job.reserved_bytes = 0
     db.flush()
@@ -39,16 +43,28 @@ def process_job(job_id):
         if not job.platform:
             process_legacy(job_id)
             return
+        owner = db.get(User, job.user_id)
+        photo_allowed = settings.photo_import_allowed(owner.username if owner else "")
         cropping = job.status == "cropping"
-        mode = "clip" if cropping else "local" if job.platform == "local" else "remote"
+        slideshow = cropping and job.media_kind == "slideshow"
+        mode = "slideshow" if slideshow else "clip" if cropping else "local" if job.platform == "local" else "remote"
         source = resolve_upload_file(job.source_path) if mode in ("clip", "local") else job.url
         if not source:
             job.status = "failed"; job.error = "Source file is missing; import it again"; db.commit(); return
         args = [str(source)]
-        clip_args = [str(job.start_ms), str(job.end_ms), str(job.volume if job.volume is not None else 1.0)] if cropping else []
+        clip_args = [str(job.start_ms), str(job.end_ms), str(job.volume if job.volume is not None else 1.0), str(job.duration_ms or 0)] if cropping else []
+        if slideshow:
+            assets = json.loads(job.slideshow_assets or "{}")
+            paths = assets.get("images", []) + ([assets["music"]] if assets.get("music") else [])
+            if not paths or any(resolve_upload_file(p) is None for p in paths):
+                job.status = "failed"; job.error = "Photo source is missing; import it again"; db.commit(); return
+            source = json.dumps({"images": [str(resolve_upload_file(p)) for p in assets["images"]], "music": str(resolve_upload_file(assets["music"])) if assets.get("music") else None, "title": job.title})
+            args = [source]
+            clip_args = [str(job.seconds_per_photo or 3), str(job.volume if job.volume is not None else 1)]
     with tempfile.TemporaryDirectory(prefix="screenping-clip-") as temporary:
         output = Path(temporary) / "result.log"
         env = {key: value for key, value in os.environ.items() if key in ("PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "LANG")}
+        env["SCREENPING_PHOTO_ENABLED"] = "true" if photo_allowed else "false"
         timeout = 180 if cropping else 600
         with output.open("w", encoding="utf-8") as log:
             process = subprocess.Popen([sys.executable, "-m", "app.services.video_import", mode, *args, temporary, *clip_args],
@@ -82,6 +98,26 @@ def process_job(job_id):
                 job.status = "failed"; job.error = result.get("error", "Preparation timed out; try a smaller video")
                 clean_job(db, job); db.commit(); return
             previous_source, previous_clip = job.source_path, job.storage_path
+            if result.get("slideshow_assets"):
+                assets = result["slideshow_assets"]
+                saved = {"images": [], "music": None}
+                for index, image in enumerate(assets["images"]):
+                    name = f"photo-{job.id}-{index}.png"
+                    shutil.copyfile(image, Path(settings.upload_dir) / name)
+                    saved["images"].append("/uploads/" + name)
+                if assets.get("music"):
+                    name = f"photo-{job.id}-music.m4a"
+                    shutil.copyfile(assets["music"], Path(settings.upload_dir) / name)
+                    saved["music"] = "/uploads/" + name
+                job.slideshow_assets = json.dumps(saved)
+                job.media_kind = "slideshow"
+                job.seconds_per_photo = 3
+            if slideshow:
+                source_name = f"source-{job.id}-{uuid.uuid4()}.mp4"
+                shutil.copyfile(Path(temporary) / "source.mp4", Path(settings.upload_dir) / source_name)
+                job.source_path = "/uploads/" + source_name
+                job.source_duration_ms = result["source_duration_ms"]
+                job.start_ms = 0; job.end_ms = result["duration_ms"]
             if not cropping:
                 source_name = f"source-{job.id}.mp4"
                 destination = Path(settings.upload_dir) / source_name
@@ -100,6 +136,9 @@ def process_job(job_id):
                 job.status = "awaiting_selection"
             source_file = resolve_upload_file(job.source_path)
             job.reserved_bytes = (source_file.stat().st_size if source_file else 0) + 3 * FINAL_BYTES
+            if job.slideshow_assets:
+                assets = json.loads(job.slideshow_assets)
+                job.reserved_bytes += 2 * SOURCE_BYTES + FINAL_BYTES + sum(resolve_upload_file(p).stat().st_size for p in assets["images"] + ([assets["music"]] if assets.get("music") else []))
             job.expires_at = utcnow() + timedelta(minutes=5)
             job.error = None
             job.progress_percent = 100

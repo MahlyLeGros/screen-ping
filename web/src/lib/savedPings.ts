@@ -37,7 +37,7 @@ export interface SavedPingRecord {
   soundBlob?: Blob;
   layers?: SavedPingLayer[];
 }
-export interface RemoteVideoRecipe { url: string; start_ms: number; end_ms: number; volume: number; title?: string }
+export interface RemoteVideoRecipe { url: string; start_ms: number; end_ms: number; volume: number; title?: string; media_kind?: "video" | "slideshow"; seconds_per_photo?: number }
 
 export interface SavedPingSummary {
   id: string;

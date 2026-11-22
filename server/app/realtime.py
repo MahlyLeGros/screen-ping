@@ -218,16 +218,19 @@ def check_upload_rate_limit(user_id: str) -> bool:
 
 
 async def cleanup_old_uploads() -> None:
+    from app.database import SessionLocal
+    from app.services.media_access import media_path_still_in_use
     upload_dir = Path(settings.upload_dir)
     if not upload_dir.exists():
         return
     cutoff = datetime.now(timezone.utc) - timedelta(hours=settings.media_ttl_hours)
-    for path in upload_dir.iterdir():
-        if not path.is_file():
-            continue
-        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
-        if mtime < cutoff:
-            path.unlink(missing_ok=True)
+    with SessionLocal() as db:
+        for path in upload_dir.iterdir():
+            if not path.is_file():
+                continue
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+            if mtime < cutoff and not media_path_still_in_use(db, "/uploads/" + path.name):
+                path.unlink(missing_ok=True)
 
 
 async def cleanup_loop() -> None:

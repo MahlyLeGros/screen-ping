@@ -26,6 +26,7 @@ const payload = (id, extras = {}) => ({ messageId: id, fromUserId: 'test', media
   mediaUrl: `https://screenping.xyz/uploads/${id}.png`, durationMs: 150, fadeInMs: 0, ...extras });
 
 app.whenReady().then(async () => {
+  ipcMain.handle('overlay:get-volume', () => 1);
   const { OverlayQueue } = require('../dist/main/overlayQueue.js');
   const { createOverlayWindow } = require('../dist/main/windows.js');
   await session.defaultSession.protocol.handle('https', async request => {

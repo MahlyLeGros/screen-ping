@@ -1,6 +1,6 @@
 /**
- * Resolve the next stepwise update feed before electron-updater checks.
- * Clients climb one version at a time (e.g. 1.0.58 → 1.0.59 → 1.0.60).
+ * Resolve the latest update feed through the legacy /next endpoint.
+ * Keep its payload contract so already-installed clients can skip old releases.
  */
 import { app } from "electron";
 import { autoUpdater } from "electron-updater";
@@ -31,7 +31,7 @@ export async function fetchNextUpdate(fromVersion?: string): Promise<NextUpdateI
   }
 }
 
-/** Point electron-updater at the next version feed. Returns false if already current. */
+/** Point electron-updater at the server-selected latest feed. */
 export async function applySteppedUpdateFeed(): Promise<{
   upToDate: boolean;
   next: string | null;

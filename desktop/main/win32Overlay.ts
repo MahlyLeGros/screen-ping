@@ -46,12 +46,14 @@ export function disableOverlayZOrderGuard() {
 
 /** Minimal fix-up — only act when something actually changed. */
 export function ensureOverlayShown(win: BrowserWindow) {
-  if (!win.isVisible()) {
+  const wasHidden = !win.isVisible();
+  if (wasHidden) {
     win.showInactive();
   }
 
   if (process.platform === "win32") {
-    if (!win.isAlwaysOnTop()) {
+    if (wasHidden) win.setAlwaysOnTop(false);
+    if (wasHidden || !win.isAlwaysOnTop()) {
       win.setAlwaysOnTop(true, "screen-saver", 2);
     }
   } else if (process.platform === "darwin") {

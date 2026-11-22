@@ -183,4 +183,7 @@ class MediaImport(Base):
     end_ms: Mapped[int | None] = mapped_column(nullable=True)
     volume: Mapped[float | None] = mapped_column(nullable=True)
     progress_percent: Mapped[int | None] = mapped_column(nullable=True)
+    media_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    slideshow_assets: Mapped[str | None] = mapped_column(Text, nullable=True)
+    seconds_per_photo: Mapped[float | None] = mapped_column(nullable=True)
     reserved_bytes: Mapped[int | None] = mapped_column(nullable=True)

@@ -344,8 +344,14 @@ function refreshTray() {
 
 function applySetting(key: SettingKey, value: boolean | number | null) {
   switch (key) {
+    case "receiveVolume":
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      store.set("receiveVolume", Math.min(1, Math.max(0, value)));
+      overlayWindow?.webContents.send("overlay:volume", store.get("receiveVolume"));
+      break;
     case "online":
       store.set("online", Boolean(value));
+      if (value) store.set("paused", false);
       reconnectSocket();
       break;
     case "paused":
@@ -507,6 +513,7 @@ async function bootstrap() {
   });
 
   ipcMain.handle("app:get-state", () => buildDesktopState(connected));
+  ipcMain.handle("overlay:get-volume", () => store.get("receiveVolume"));
 
   ipcMain.on("app:set", (_event, { key, value }: { key: SettingKey; value: boolean | number | null }) => {
     applySetting(key, value);
@@ -655,6 +662,8 @@ async function bootstrap() {
 }
 
 function startApp() {
+  // The tray now has one Online switch; don't retain a hidden legacy pause.
+  store.set("paused", false);
   if (!overlayWindow || overlayWindow.isDestroyed()) {
     overlayInitialized = false;
     overlayWindow = createOverlayWindow();

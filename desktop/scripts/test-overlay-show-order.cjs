@@ -1,0 +1,11 @@
+const assert=require('assert/strict');
+const Module=require('module');const original=Module._load;
+Module._load=function(name,...rest){if(name==='electron')return {BrowserWindow:{}};return original.call(this,name,...rest)};
+const {ensureOverlayShown}=require('../dist/main/win32Overlay');
+const calls=[];let visible=false,topmost=true;
+const window={isVisible:()=>visible,showInactive:()=>{visible=true;calls.push('show')},isAlwaysOnTop:()=>topmost,setAlwaysOnTop:value=>{topmost=value;calls.push(value?'top':'normal')}};
+ensureOverlayShown(window);
+if(process.platform==='win32')assert.deepEqual(calls,['show','normal','top'],'Reassert Windows topmost after inactive show, even when old flag was true');
+assert(topmost);assert(visible);
+calls.length=0;ensureOverlayShown(window);assert.equal(calls.length,0,'Do not toggle an already visible window repeatedly');
+console.log('PASS hidden overlay reasserts topmost after show; visible overlay does not toggle');

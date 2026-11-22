@@ -3,6 +3,11 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     tiktok_import_enabled: bool = False
+    tiktok_photo_import_enabled: bool = False
+    tiktok_photo_test_user: str = ""
+
+    def photo_import_allowed(self, username: str) -> bool:
+        return self.tiktok_photo_import_enabled or bool(self.tiktok_photo_test_user and username.casefold() == self.tiktok_photo_test_user.casefold())
     tiktok_import_queue_limit: int = 20
     tiktok_import_timeout_seconds: int = 180
     tiktok_import_expiry_minutes: int = 30

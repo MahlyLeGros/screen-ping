@@ -8,6 +8,7 @@ export interface AppSettings {
   refreshToken: string | null;
   serverUrl: string;
   paused: boolean;
+  receiveVolume: number;
   online: boolean;
   overlayDisplayId: number | null;
   savedUsername: string | null;
@@ -25,6 +26,7 @@ const store = new Store<AppSettings>({
     refreshToken: null,
     serverUrl: DEFAULT_SERVER_URL,
     paused: false,
+    receiveVolume: 1,
     online: true,
     overlayDisplayId: null,
     savedUsername: null,
