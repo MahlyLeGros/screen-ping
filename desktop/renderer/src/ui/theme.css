@@ -351,7 +351,11 @@ input {
 }
 
 .receive-volume { display: flex; align-items: center; gap: 12px; }
-.receive-volume input { flex: 1; min-width: 0; accent-color: var(--violet); cursor: pointer; }
+.receive-volume input { flex: 1; min-width: 0; height: 28px; padding: 0; appearance: none; background: transparent; cursor: pointer; touch-action: pan-y; }
+.receive-volume input::-webkit-slider-runnable-track { height: 8px; border: 0; border-radius: 999px; background: linear-gradient(90deg, #d879ff, #a78bfa) left / var(--range-value, 0%) 100% no-repeat, #34313c; }
+.receive-volume input::-moz-range-track { height: 8px; border: 0; border-radius: 999px; background: linear-gradient(90deg, #d879ff, #a78bfa) left / var(--range-value, 0%) 100% no-repeat, #34313c; }
+.receive-volume input::-webkit-slider-thumb { width: 0; height: 0; margin: 0; padding: 0; appearance: none; border: 0; background: transparent; opacity: 0; }
+.receive-volume input::-moz-range-thumb { width: 0; height: 0; margin: 0; padding: 0; border: 0; background: transparent; opacity: 0; }
 .receive-volume input:focus-visible { outline: 2px solid var(--violet); outline-offset: 4px; }
 .receive-volume output { min-width: 42px; text-align: right; font-variant-numeric: tabular-nums; }
 

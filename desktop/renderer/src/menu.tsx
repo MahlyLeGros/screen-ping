@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./ui/theme.css";
@@ -127,11 +128,11 @@ function Menu() {
       <div style={{ padding: "8px 12px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, fontSize: 12 }}>
           <label htmlFor="receive-volume">Volume</label>
-          <output htmlFor="receive-volume">{Math.round(state.receiveVolume * 100)}%</output>
+          <output htmlFor="receive-volume">{state.receiveVolume <= 0 ? 0 : state.receiveVolume >= 1 ? 100 : Math.max(1, Math.min(99, Math.round(state.receiveVolume * 100)))}%</output>
         </div>
         <div className="receive-volume">
-          <input id="receive-volume" type="range" min="0" max="100" step="1"
-            aria-label="Incoming ping volume" value={Math.round(state.receiveVolume * 100)}
+          <input id="receive-volume" type="range" min="0" max="100" step="any" style={{ "--range-value": `${state.receiveVolume * 100}%` } as CSSProperties}
+            aria-label="Incoming ping volume" value={state.receiveVolume * 100}
             onChange={event => set("receiveVolume", Number(event.target.value) / 100)} />
         </div>
       </div>

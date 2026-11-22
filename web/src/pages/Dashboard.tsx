@@ -682,7 +682,7 @@ export default function DashboardPage() {
     setDuration(Math.max(MIN_DURATION_MS, Math.min(MAX_DURATION_MS, local.cut ? local.cut.end - local.cut.start : local.duration)));
   }, [local?.file, local?.duration, local?.cut]);
 
-  // Match Stay on screen to the longest of video / sound (clamped 2–30s).
+  // Match Stay on screen to the longest of video / sound (clamped 0.1–30s).
   useEffect(() => {
     if (importedVideo || local) return;
     const key = mediaDurationKey(file, soundFile);

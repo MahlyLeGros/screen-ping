@@ -257,7 +257,7 @@ def cancel_import(job_id: str, user: User = Depends(get_current_user), db: Sessi
 
 @router.post("/{job_id}/send")
 async def send_import(job_id: str, receiver_ids: str = Form(...), caption: str | None = Form(None),
-                      duration_ms: int | None = Form(None, ge=2000, le=180000),
+                      duration_ms: int | None = Form(None, ge=100, le=180000),
                       sound_file: UploadFile | None = File(None),
                       user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     job = owned_job(db, user, job_id)

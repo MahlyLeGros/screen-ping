@@ -6,7 +6,7 @@ from typing import Any
 
 from app.config import settings
 
-MIN_DURATION_MS = 2000
+MIN_DURATION_MS = 100
 MAX_DURATION_MS = 30_000
 DEFAULT_DURATION_MS = 3000
 

@@ -120,6 +120,7 @@ export default function PrecisionSlider({
           id={id}
           type="range"
           className="range-slider min-w-0 flex-1"
+          style={{ "--range-value": `${((localValue - min) / (max - min)) * 100}%` } as React.CSSProperties}
           aria-label={label}
           min={min}
           max={max}

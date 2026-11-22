@@ -152,7 +152,7 @@ export function clampLayout(layout: MediaLayout, minSize = 0.001): MediaLayout {
   return clampLayoutPosition({ ...layout, width, height });
 }
 
-export const MIN_DURATION_MS = 2000;
+export const MIN_DURATION_MS = 100;
 export const MAX_DURATION_MS = 30_000;
 export const DEFAULT_DURATION_MS = 3000;
 
