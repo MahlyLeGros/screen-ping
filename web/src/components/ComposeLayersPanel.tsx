@@ -261,8 +261,9 @@ function ComposeLayersPanel({
                   min={0}
                   max={100}
                   value={Math.round(layer.opacity * 100)}
+                  style={{ "--range-value": `${layer.opacity * 100}%` } as React.CSSProperties}
                   onChange={(ev) => setOpacity(layer.id, Number(ev.target.value) / 100)}
-                  className="mt-0.5 w-full"
+                  className="site-range mt-0.5 w-full"
                   aria-label={`Opacity for ${layer.name}`}
                 />
               </div>

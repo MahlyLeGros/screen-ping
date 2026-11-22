@@ -174,12 +174,12 @@ export default function VideoClipDialog({ job, onClose, onChange, onDraft, onSel
         <div className="clip-preview-meta">
         <span className="clip-preview-time text-xs text-slate-300 tabular-nums">{timeLabel(Math.min(end - start, Math.max(0, previewMs - start)))} / {timeLabel(end - start)}</span>
         <div className="clip-volume-control">
-          <button type="button" className="clip-transport-button" aria-label="Video volume" title={`Video volume: ${Math.round(volume * 100)}%`} aria-expanded={volumeOpen} disabled={busy}
+          <button type="button" className="clip-transport-button" aria-label="Video volume" title={`Video volume: ${volume <= 0 ? 0 : volume >= 1 ? 100 : Math.max(1, Math.min(99, Math.round(volume * 100)))}%`} aria-expanded={volumeOpen} disabled={busy}
             onClick={() => setVolumeOpen(value => !value)}><PreviewIcon kind={volume === 0 ? "mute" : "sound"} /></button>
           {volumeOpen && <div className="clip-volume-popover">
-            <input type="range" min="0" max="100" step="1" aria-label="Sent video volume" value={Math.round(volume * 100)} disabled={busy}
+            <input className="site-range" type="range" min="0" max="100" step="any" aria-label="Sent video volume" value={volume * 100} style={{ "--range-value": `${volume * 100}%` } as React.CSSProperties} disabled={busy}
               onChange={event => setVolume(Number(event.target.value) / 100)} />
-            <output className="text-xs tabular-nums">{Math.round(volume * 100)}%</output>
+            <output className="text-xs tabular-nums">{volume <= 0 ? 0 : volume >= 1 ? 100 : Math.max(1, Math.min(99, Math.round(volume * 100)))}%</output>
           </div>}
         </div>
         </div>

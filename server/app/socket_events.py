@@ -45,6 +45,7 @@ sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins=settings.cors
 _delivery_groups: dict[str, DeliveryGroup] = {}
 _delivery_group_tasks: dict[str, asyncio.Task] = {}
 _batch_lock = asyncio.Lock()
+SYNC_START_BUFFER_MS = 250
 
 
 async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None:
@@ -56,7 +57,7 @@ async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None
     task = _delivery_group_tasks.pop(group_id, None)
     if task and task is not asyncio.current_task():
         task.cancel()
-    start_at = int(time.time() * 1000) + 1500 + group.delay_ms
+    start_at = int(time.time() * 1000) + SYNC_START_BUFFER_MS + group.delay_ms
     db = SessionLocal()
     try:
         for message_id, sids in group.targets.items():
@@ -70,7 +71,7 @@ async def _start_delivery_group(group_id: str, *, timeout: bool = False) -> None
                 await _notify_sender_result(message, reason="preparation_timeout")
                 continue
             # Start expiry at the scheduled display, not before a deliberate delay.
-            message.dispatched_at = utcnow() + timedelta(milliseconds=1500 + group.delay_ms)
+            message.dispatched_at = utcnow() + timedelta(milliseconds=SYNC_START_BUFFER_MS + group.delay_ms)
             message.expires_at = message.dispatched_at + timedelta(milliseconds=max(30_000, message.media_duration_ms or 0) + 60_000)
             db.commit()
             for dsid in ready_sids:
@@ -133,7 +134,8 @@ async def message_send_batch(sid, data):
             desktop_session = await sio.get_session(dsid)
             supports_sync = supports_sync and desktop_session.get("delivery_sync") == 1
             long_queue = long_queue and desktop_session.get("max_video_duration_ms", 30_000) >= 180_000
-        group_id = str(uuid.uuid4()) if supports_sync and len(_delivery_groups) < 200 else None
+        needs_sync = len(items) > 1 or len(socket_ids) > 1
+        group_id = str(uuid.uuid4()) if supports_sync and needs_sync and len(_delivery_groups) < 200 else None
         if group_id:
             _delivery_groups[group_id] = DeliveryGroup(delay_ms=sanitize_delivery_options(data)["delayMs"], timeout_seconds=600 if long_queue else 30)
         results = []
@@ -356,7 +358,7 @@ async def _dispatch_message(sid, data, _group_id=None):
                 requested = int(requested)
             except (TypeError, ValueError):
                 requested = message.media_duration_ms
-            options["durationMs"] = max(2000, min(requested, message.media_duration_ms, 180_000))
+            options["durationMs"] = max(100, min(requested, message.media_duration_ms, 180_000))
             if options["durationMs"] > 30_000:
                 for dsid in desktop_sids:
                     receiver_session = await sio.get_session(dsid)

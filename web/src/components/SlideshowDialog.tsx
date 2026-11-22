@@ -110,10 +110,10 @@ export default function SlideshowDialog({ job, onClose, onChange }: {
         <button type="button" className="btn-primary" disabled={busy || failed || loaded !== photos.length} onClick={() => void confirm()}>Upload</button>
         <button type="button" className="btn-secondary" aria-label={playing ? "Pause slideshow" : "Play slideshow"} disabled={busy || failed || loaded !== photos.length} onClick={() => void play()}>{playing ? "Ⅱ" : "▶"}</button>
         <span className="text-xs tabular-nums text-slate-400">{position.toFixed(1)} / {timing.duration.toFixed(1)}s · {current + 1}/{photos.length}</span>
-        <label className="flex items-center gap-2 text-xs text-slate-400">Volume <input aria-label="Slideshow volume" type="range" min="0" max="1" step="0.01" value={volume} disabled={!job.has_music || busy} onChange={e => setVolume(Number(e.target.value))} className="w-24 accent-purple-400" /></label>
+        <label className="flex items-center gap-2 text-xs text-slate-400">Volume <input aria-label="Slideshow volume" type="range" min="0" max="1" step="0.01" value={volume} disabled={!job.has_music || busy} onChange={e => setVolume(Number(e.target.value))} className="site-range w-24" style={{ "--range-value": `${volume * 100}%` } as React.CSSProperties} /></label>
       </div>
       <label className="flex items-center gap-3 text-sm text-slate-300">Seconds per photo
-        <input aria-label="Seconds per photo" type="range" min="0.5" max="10" step="0.1" value={seconds} disabled={busy} className="min-w-0 flex-1 accent-purple-400" onChange={e => { setPlaying(false); audio.current?.pause(); setPosition(0); setSeconds(Number(e.target.value)); }} />
+        <input aria-label="Seconds per photo" type="range" min="0.5" max="10" step="0.1" value={seconds} disabled={busy} className="site-range min-w-0 flex-1" style={{ "--range-value": `${(seconds - 0.5) / 9.5 * 100}%` } as React.CSSProperties} onChange={e => { setPlaying(false); audio.current?.pause(); setPosition(0); setSeconds(Number(e.target.value)); }} />
         <span className="w-10 text-right tabular-nums">{seconds.toFixed(1)}s</span>
       </label>
       <p className="text-xs text-slate-400">{timing.seconds < seconds - 0.04 ? `Accelerated to ${timing.seconds.toFixed(2)}s per photo to keep all ${photos.length} photos within 30 seconds.` : `${photos.length} photos · ${timing.seconds.toFixed(2)}s per photo · original order`}</p>

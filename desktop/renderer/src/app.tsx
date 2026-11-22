@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./ui/theme.css";
@@ -131,11 +132,11 @@ function ReceiveView({ state }: { state: DesktopState }) {
 
       <Card title="Volume">
         <div className="receive-volume">
-          <input type="range" min="0" max="100" step="1"
+          <input type="range" min="0" max="100" step="any" style={{ "--range-value": `${state.receiveVolume * 100}%` } as CSSProperties}
             aria-label="Incoming ping volume"
-            value={Math.round(state.receiveVolume * 100)}
+            value={state.receiveVolume * 100}
             onChange={event => window.desktopAPI.set("receiveVolume", Number(event.target.value) / 100)} />
-          <output>{Math.round(state.receiveVolume * 100)}%</output>
+          <output>{state.receiveVolume <= 0 ? 0 : state.receiveVolume >= 1 ? 100 : Math.max(1, Math.min(99, Math.round(state.receiveVolume * 100)))}%</output>
         </div>
         <p className="card__desc">Volume for all received videos and sounds. 0% mutes pings.</p>
       </Card>
