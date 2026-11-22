@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from app.config import settings
+from app.services.desktop_versions import parse_version
 
 try:
     import redis
@@ -38,7 +39,7 @@ class PresenceManager:
         self._socket_users: dict[str, str] = {}
         self._socket_client_types: dict[str, str] = {}
         self._socket_video_limits: dict[str, int] = {}
-        self._user_desktop_versions: dict[str, str] = {}
+        self._socket_desktop_versions: dict[str, str] = {}
         self._user_last_active: dict[str, datetime] = {}
 
     def connect(
@@ -54,25 +55,28 @@ class PresenceManager:
         self._socket_client_types[sid] = client_type
         self._socket_video_limits[sid] = max_video_duration_ms
         if client_type == "desktop" and app_version:
-            self._user_desktop_versions[user_id] = app_version
+            self._socket_desktop_versions[sid] = app_version
 
     def disconnect(self, sid: str) -> str | None:
         user_id = self._socket_users.pop(sid, None)
         self._socket_client_types.pop(sid, None)
         self._socket_video_limits.pop(sid, None)
+        self._socket_desktop_versions.pop(sid, None)
         if user_id and sid in self._user_sockets.get(user_id, set()):
             self._user_sockets[user_id].discard(sid)
             if not self._user_sockets[user_id]:
                 del self._user_sockets[user_id]
         if user_id and not self.desktop_sids_for_user(user_id):
-            self._user_desktop_versions.pop(user_id, None)
             self._user_last_active.pop(user_id, None)
         return user_id
 
     def get_desktop_version(self, user_id: str) -> str | None:
-        if not self.desktop_sids_for_user(user_id):
-            return None
-        return self._user_desktop_versions.get(user_id)
+        versions = [
+            self._socket_desktop_versions[sid]
+            for sid in self.desktop_sids_for_user(user_id)
+            if sid in self._socket_desktop_versions
+        ]
+        return max(versions, key=parse_version) if versions else None
 
     def supports_long_video(self, user_id: str) -> bool:
         sids = self.desktop_sids_for_user(user_id)
