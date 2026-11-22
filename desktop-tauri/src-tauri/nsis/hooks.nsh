@@ -16,11 +16,13 @@
     ExecWait '"${dir}\${uninstaller}" /currentuser /S _?=${dir}'
     ; Belt and braces: wait for its files to go (up to 15 s).
     StrCpy $R6 0
-    ${While} ${FileExists} "${dir}\${exe}"
-    ${AndIf} $R6 < 60
+    ${DoWhile} ${FileExists} "${dir}\${exe}"
+      ${If} $R6 >= 60
+        ${Break}
+      ${EndIf}
       Sleep 250
       IntOp $R6 $R6 + 1
-    ${EndWhile}
+    ${Loop}
     Delete "${dir}\${uninstaller}"
     RMDir "${dir}"
   ${EndIf}
