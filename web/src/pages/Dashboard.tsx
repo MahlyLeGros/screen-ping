@@ -715,11 +715,15 @@ export default function DashboardPage() {
       onlineIds.add(currentUser.id);
     }
     setReceiverIds((prev) => prev.filter((id) => onlineIds.has(id)));
-  }, [friends, currentUser]);
+  }, [friends, currentUser?.id, currentUser?.is_desktop_online]);
 
   async function refreshCurrentUser() {
     try {
-      setCurrentUser(await api.me());
+      const next = await api.me();
+      setCurrentUser((prev) => {
+        if (prev && Object.entries(next).every(([key, value]) => prev[key as keyof User] === value)) return prev;
+        return next;
+      });
     } catch {
       setCurrentUser(null);
     }
@@ -727,7 +731,8 @@ export default function DashboardPage() {
 
   async function refreshDesktopLatest() {
     try {
-      setDesktopDownload(await fetchDesktopLatest());
+      const next = await fetchDesktopLatest();
+      setDesktopDownload((prev) => prev?.version === next.version && prev.download_url === next.download_url ? prev : next);
     } catch {
       setDesktopDownload(null);
     }
