@@ -10,6 +10,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
 };
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Duration;
+use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+
 const GUARD_ID: usize = 0x5350; // "SP"
 
 /// Never take focus, never appear in the taskbar or Alt+Tab.
@@ -67,4 +71,32 @@ pub fn disable_zorder_guard(hwnd: HWND) {
     unsafe {
         let _ = RemoveWindowSubclass(hwnd, Some(guard_proc), GUARD_ID);
     }
+}
+
+static KEEPER_RUNNING: AtomicBool = AtomicBool::new(false);
+static KEEPER_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Re-assert top-most every 800 ms while a ping is showing, like
+/// `keepOverlayOnTop` in desktop/main/overlayQueue.ts.
+pub fn start_topmost_keeper(hwnd: HWND) {
+    let gen = KEEPER_GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    KEEPER_RUNNING.store(true, Ordering::SeqCst);
+    let raw = hwnd.0 as isize;
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(800));
+        if !KEEPER_RUNNING.load(Ordering::SeqCst) || KEEPER_GEN.load(Ordering::SeqCst) != gen {
+            break;
+        }
+        let hwnd = HWND(raw as *mut core::ffi::c_void);
+        unsafe {
+            if !IsWindowVisible(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            }
+        }
+        show_topmost_no_activate(hwnd);
+    });
+}
+
+pub fn stop_topmost_keeper() {
+    KEEPER_RUNNING.store(false, Ordering::SeqCst);
 }

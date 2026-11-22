@@ -42,7 +42,9 @@ fn show_overlay(app: AppHandle) -> Result<(), String> {
     let size = *monitor.size();
     win.set_position(PhysicalPosition::new(pos.x, pos.y))
         .map_err(|e| e.to_string())?;
-    win.set_size(PhysicalSize::new(size.width, size.height))
+    // One pixel short, like Electron: a topmost window covering the monitor
+    // exactly makes Windows treat it as a fullscreen app (taskbar, games).
+    win.set_size(PhysicalSize::new(size.width, size.height.saturating_sub(1).max(1)))
         .map_err(|e| e.to_string())?;
     win.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
 
@@ -51,6 +53,7 @@ fn show_overlay(app: AppHandle) -> Result<(), String> {
         let hwnd = win.hwnd().map_err(|e| e.to_string())?;
         win32::show_topmost_no_activate(hwnd);
         win32::enable_zorder_guard(hwnd);
+        win32::start_topmost_keeper(hwnd);
     }
     #[cfg(not(windows))]
     win.show().map_err(|e| e.to_string())?;
@@ -64,6 +67,7 @@ fn hide_overlay(app: AppHandle) -> Result<(), String> {
     #[cfg(windows)]
     {
         let hwnd = win.hwnd().map_err(|e| e.to_string())?;
+        win32::stop_topmost_keeper();
         win32::disable_zorder_guard(hwnd);
     }
     win.hide().map_err(|e| e.to_string())?;
