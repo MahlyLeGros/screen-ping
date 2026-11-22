@@ -361,6 +361,8 @@ export default function DashboardPage() {
   const [receiverIds, setReceiverIds] = useState<string[]>([]);
   const [drawReceiverIds, setDrawReceiverIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [desktopOnlineStable, setDesktopOnlineStable] = useState(false);
+  const offlinePresenceTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [file, setFile] = useState<File | null>(null);
   const localVideo = useLocalVideo();
   const local = localVideo.local;
@@ -428,7 +430,10 @@ export default function DashboardPage() {
 
   const desktopUrl =
     desktopDownload?.download_url ?? "https://screenping.xyz/api/desktop/download";
-  const desktopOnline = Boolean(currentUser?.is_desktop_online);
+  const desktopOnline = desktopOnlineStable;
+  const currentUserForPresence = currentUser
+    ? { ...currentUser, is_desktop_online: desktopOnline }
+    : null;
   const needsDesktopInstall = Boolean(currentUser && !desktopOnline && !hasEverConnectedDesktop());
   const needsDesktopOpen = Boolean(currentUser && !desktopOnline && hasEverConnectedDesktop());
   const desktopUpdateAvailable = Boolean(
@@ -708,14 +713,28 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (currentUser?.is_desktop_online) {
+      setDesktopOnlineStable(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setDesktopOnlineStable(false), 2500);
+    return () => window.clearTimeout(timer);
+  }, [currentUser?.is_desktop_online]);
+
+  useEffect(() => () => {
+    offlinePresenceTimers.current.forEach((timer) => window.clearTimeout(timer));
+    offlinePresenceTimers.current.clear();
+  }, []);
+
+  useEffect(() => {
     const onlineIds = new Set(
       friends.filter((f) => f.status === "accepted" && f.is_online).map((f) => f.user_id),
     );
-    if (currentUser?.is_desktop_online) {
+    if (desktopOnline && currentUser) {
       onlineIds.add(currentUser.id);
     }
     setReceiverIds((prev) => prev.filter((id) => onlineIds.has(id)));
-  }, [friends, currentUser?.id, currentUser?.is_desktop_online]);
+  }, [friends, currentUser?.id, desktopOnline]);
 
   async function refreshCurrentUser() {
     try {
@@ -725,7 +744,7 @@ export default function DashboardPage() {
         return next;
       });
     } catch {
-      setCurrentUser(null);
+      // Keep the last known user state through brief request failures.
     }
   }
 
@@ -783,10 +802,23 @@ export default function DashboardPage() {
       setStatus(`Message ${data.messageId.slice(0, 8)}... → ${data.status}${data.reason ? ` (${data.reason})` : ""}`);
       void api.history().then(setHistory).catch(() => {});
     }, (data) => {
-      setFriends((prev) => applyPresenceUpdate(prev, data));
-      setCurrentUser((prev) =>
-        prev && prev.id === data.userId ? { ...prev, is_desktop_online: data.isOnline } : prev,
-      );
+      const pending = offlinePresenceTimers.current.get(data.userId);
+      if (data.isOnline) {
+        if (pending) window.clearTimeout(pending);
+        offlinePresenceTimers.current.delete(data.userId);
+        setFriends((prev) => applyPresenceUpdate(prev, data));
+        setCurrentUser((prev) =>
+          prev && prev.id === data.userId ? { ...prev, is_desktop_online: true } : prev,
+        );
+      } else if (!pending) {
+        offlinePresenceTimers.current.set(data.userId, window.setTimeout(() => {
+          offlinePresenceTimers.current.delete(data.userId);
+          setFriends((prev) => applyPresenceUpdate(prev, data));
+          setCurrentUser((prev) =>
+            prev && prev.id === data.userId ? { ...prev, is_desktop_online: false } : prev,
+          );
+        }, 2500));
+      }
     });
     const unsubFriends = subscribeFriends(() => {
       void api.friends().then(setFriends).catch(() => {});
@@ -1206,7 +1238,7 @@ export default function DashboardPage() {
           <FriendsPanel onFriendsChange={setFriends} />
         </div>
       ) : tab === "draw" ? (
-        <DrawPanel friends={friends} currentUser={currentUser} selectedIds={drawReceiverIds} onSelectedIdsChange={setDrawReceiverIds} />
+        <DrawPanel friends={friends} currentUser={currentUserForPresence} selectedIds={drawReceiverIds} onSelectedIdsChange={setDrawReceiverIds} />
       ) : (
         <div id="panel-send" role="tabpanel" aria-labelledby="tab-send" className="flex min-h-0 flex-col gap-3 overflow-visible xl:flex-1">
           <form noValidate onSubmit={handleSend} className="compose-layout compose-layout-fill">
@@ -1217,7 +1249,7 @@ export default function DashboardPage() {
                 friends={friends}
                 selectedIds={receiverIds}
                 onChange={setReceiverIds}
-                currentUser={currentUser}
+                currentUser={currentUserForPresence}
                 compact
               />
             </section>
@@ -1361,7 +1393,7 @@ export default function DashboardPage() {
                         friends={friends}
                         selectedIds={receiverIds}
                         onChange={setReceiverIds}
-                        currentUser={currentUser}
+                        currentUser={currentUserForPresence}
                         compact
                       />
                     </section>
