@@ -41,6 +41,9 @@ struct MenuState {
     hidden_at: Option<Instant>,
     pending_show: bool,
     anchor: Option<(f64, f64)>,
+    /// The renderer has reported its height at least once. From then on the
+    /// popup opens at once; it only reports again when its height changes.
+    sized: bool,
 }
 
 pub struct App {
@@ -392,8 +395,14 @@ impl App {
 
     fn show_menu(self: &Arc<Self>) {
         let Some(w) = self.ensure_menu() else { return };
-        self.menu.lock().unwrap().pending_show = true;
+        let sized = self.menu.lock().unwrap().sized;
         let _ = w.emit_to(MENU, "app:state", self.state());
+        if sized {
+            // Already laid out: show now, a later resize just re-places it.
+            self.reveal_menu();
+            return;
+        }
+        self.menu.lock().unwrap().pending_show = true;
         let me = Arc::downgrade(self);
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_millis(400)).await;
@@ -434,7 +443,11 @@ impl App {
             return;
         }
         let _ = w.set_size(LogicalSize::new(width.round(), height.round()));
-        let pending = std::mem::take(&mut self.menu.lock().unwrap().pending_show);
+        let pending = {
+            let mut m = self.menu.lock().unwrap();
+            m.sized = true;
+            std::mem::take(&mut m.pending_show)
+        };
         if pending {
             self.reveal_menu();
         } else if w.is_visible().unwrap_or(false) {
