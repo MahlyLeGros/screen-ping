@@ -41,6 +41,7 @@ export default function PrecisionSlider({
   const draggingRef = useRef(false);
   const localValueRef = useRef(value);
   const [localValue, setLocalValue] = useState(value);
+  const [numberDraft, setNumberDraft] = useState<string | null>(null);
   const resolvedInputStep = inputStep ?? step;
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export default function PrecisionSlider({
     const clamped = clamp(roundToStep(next, resolvedInputStep), min, max);
     setLocalValue(clamped);
     localValueRef.current = clamped;
+    setNumberDraft(null);
     onChange(clamped);
   };
 
@@ -67,6 +69,7 @@ export default function PrecisionSlider({
     const clamped = clamp(next, min, max);
     setLocalValue(clamped);
     localValueRef.current = clamped;
+    setNumberDraft(null);
     onChange(clamped);
   };
 
@@ -84,15 +87,17 @@ export default function PrecisionSlider({
   };
 
   const handleNumberChange = (raw: string) => {
-    if (raw.trim() === "" || raw === "-" || raw === ".") return;
-    const next = Number(raw);
-    if (!Number.isFinite(next)) return;
-    commit(displayAsSeconds ? next * 1000 : next);
+    setNumberDraft(raw);
   };
 
   const handleNumberBlur = (raw: string) => {
+    if (raw.trim() === "" || raw === "-" || raw === ".") {
+      setNumberDraft(null);
+      return;
+    }
     const next = Number(raw);
     if (!Number.isFinite(next)) {
+      setNumberDraft(null);
       setLocalValue(value);
       localValueRef.current = value;
       return;
@@ -142,9 +147,12 @@ export default function PrecisionSlider({
           min={numberMin}
           max={numberMax}
           step={numberStep}
-          value={numberValue}
+          value={numberDraft ?? String(numberValue)}
           onChange={(e) => handleNumberChange(e.target.value)}
           onBlur={(e) => handleNumberBlur(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
         />
       </div>
     </div>
