@@ -26,12 +26,29 @@ export default function TikTokImport({ job, onChange, onReplace, onPrepareEdit, 
   useEffect(() => {
     if (!job || !active || disabled) return;
     let disposed = false;
-    const timer = window.setInterval(() => {
+    let timer: number | undefined;
+    const poll = () => {
+      if (disposed || document.visibilityState !== "visible") return;
       void api.importStatus(job.id).then(next => {
         if (!disposed) { callback.current(next); setError(""); }
       }).catch(err => { if (!disposed) setError(err instanceof Error ? err.message : "Connection interrupted; retrying…"); });
-    }, 1200);
-    return () => { disposed = true; window.clearInterval(timer); };
+    };
+    const syncPolling = () => {
+      if (document.visibilityState !== "visible") {
+        if (timer !== undefined) window.clearInterval(timer);
+        timer = undefined;
+        return;
+      }
+      poll();
+      if (timer === undefined) timer = window.setInterval(poll, 2500);
+    };
+    document.addEventListener("visibilitychange", syncPolling);
+    syncPolling();
+    return () => {
+      disposed = true;
+      document.removeEventListener("visibilitychange", syncPolling);
+      if (timer !== undefined) window.clearInterval(timer);
+    };
   }, [job?.id, active, disabled]);
   async function edit() {
     if (!job || busy || disabled) return;

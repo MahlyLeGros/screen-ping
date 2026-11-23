@@ -73,7 +73,7 @@ export default function FriendsPanel({ onFriendsChange }: FriendsPanelProps) {
     }
   }
 
-  async function withConfirm(action: () => Promise<void>, message: string) {
+  async function withConfirm(action: () => Promise<unknown>, message: string) {
     if (!window.confirm(message)) return;
     setActing(true);
     try {

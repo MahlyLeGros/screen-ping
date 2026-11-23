@@ -25,17 +25,24 @@ function HeaderStatus() {
   }, []);
 
   useEffect(() => {
+    let firstSocketState = true;
     function applyMe() {
       api.me()
         .then((u) => {
           setMeId(u.id);
           setDesktopOn(Boolean(u.is_desktop_online));
         })
-        .catch(() => setDesktopOn(false));
+        .catch(() => {});
     }
     applyMe();
-    const timer = setInterval(applyMe, 15_000);
-    return () => clearInterval(timer);
+    const unsubscribe = subscribeSocketConnection((connected) => {
+      if (firstSocketState) {
+        firstSocketState = false;
+      } else if (connected) {
+        applyMe();
+      }
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -91,6 +98,7 @@ function HeaderStatus() {
 function DashboardHeaderChrome({ fullWidth = false }: { fullWidth?: boolean }) {
   const chrome = useDashboardChromeOptional()?.chrome;
   if (!chrome) return null;
+  const setTab = chrome.setTab;
 
   const tabs = [
     { id: "send" as const, label: "Send", tabId: "tab-send", panelId: "panel-send" },
@@ -99,7 +107,7 @@ function DashboardHeaderChrome({ fullWidth = false }: { fullWidth?: boolean }) {
   ];
 
   function focusTab(id: "send" | "friends" | "draw") {
-    chrome.setTab(id);
+    setTab(id);
     document.getElementById(
       id === "send" ? "tab-send" : id === "draw" ? "tab-draw" : "tab-friends",
     )?.focus();

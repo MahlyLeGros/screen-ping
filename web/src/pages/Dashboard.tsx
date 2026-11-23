@@ -361,6 +361,7 @@ export default function DashboardPage() {
   const [receiverIds, setReceiverIds] = useState<string[]>([]);
   const [drawReceiverIds, setDrawReceiverIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
   const [desktopOnlineStable, setDesktopOnlineStable] = useState(false);
   const offlinePresenceTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [file, setFile] = useState<File | null>(null);
@@ -414,7 +415,6 @@ export default function DashboardPage() {
   const isLayerCompose = imageLayers.length > 0 && !file;
   const isSoundOnly = Boolean(soundFile && !file && imageLayers.length === 0);
   const isVideo = importedVideo || (file ? guessMediaKind(file) === "video" : false);
-  const isImage = file ? guessMediaKind(file) === "image" : false;
   const hasVisualMedia = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
   const hasSound = Boolean(soundFile);
   const overlaySound = hasVisualMedia && soundFile ? soundFile : undefined;
@@ -739,6 +739,7 @@ export default function DashboardPage() {
   async function refreshCurrentUser() {
     try {
       const next = await api.me();
+      currentUserIdRef.current = next.id;
       setCurrentUser((prev) => {
         if (prev && Object.entries(next).every(([key, value]) => prev[key as keyof User] === value)) return prev;
         return next;
@@ -760,11 +761,16 @@ export default function DashboardPage() {
   useEffect(() => {
     void refreshDesktopLatest();
     const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
       void refreshDesktopLatest();
       void refreshCurrentUser();
     };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -802,6 +808,7 @@ export default function DashboardPage() {
       setStatus(`Message ${data.messageId.slice(0, 8)}... → ${data.status}${data.reason ? ` (${data.reason})` : ""}`);
       void api.history().then(setHistory).catch(() => {});
     }, (data) => {
+      if (data.isOnline && data.userId === currentUserIdRef.current) void refreshCurrentUser();
       const pending = offlinePresenceTimers.current.get(data.userId);
       if (data.isOnline) {
         if (pending) window.clearTimeout(pending);
@@ -828,17 +835,6 @@ export default function DashboardPage() {
       disconnectSocket();
     };
   }, []);
-
-  useEffect(() => {
-    if (tab !== "send") return;
-    void refreshCurrentUser();
-    void refreshDesktopLatest();
-    const timer = setInterval(() => {
-      void refreshCurrentUser();
-      void refreshDesktopLatest();
-    }, 10_000);
-    return () => clearInterval(timer);
-  }, [tab]);
 
   async function ensureFreshImport(previous: MediaImportJob): Promise<MediaImportJob> {
     try {
