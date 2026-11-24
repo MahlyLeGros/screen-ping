@@ -1983,7 +1983,7 @@
 }
 
 @media (min-width: 1280px) {
-  .compose-side-right-body.widget-pane { flex: 1 1 0%; height: auto; }
+  .compose-side-right-body.widget-pane { flex: 1 1 0%; height: auto; margin-right: -1rem; padding-right: 1rem; }
   .compose-side-left {
     display: flex;
     flex-direction: column;
