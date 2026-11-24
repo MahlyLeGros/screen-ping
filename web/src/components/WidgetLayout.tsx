@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { defaultWidgetLayout, moveWidget, parseWidgetLayout, resizeWidget, widgetStorageKey, type WidgetId, type WidgetLayout, type WidgetSide } from "../lib/widgetLayout";
+import { defaultWidgetLayout, loadWidgetLayout, moveWidget, resizeWidget, widgetStorageKey, type WidgetId, type WidgetLayout, type WidgetSide } from "../lib/widgetLayout";
 
 const LABELS: Record<WidgetId, string> = { saved: "Saved pings", recent: "Recent sends", media: "Media", timing: "Caption & timing" };
 interface Entry { host: HTMLDivElement; anchor: HTMLSpanElement }
@@ -19,7 +19,7 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
   const entries = useRef(new Map<WidgetId, Entry>());
   const panes = useRef<Partial<Record<WidgetSide, HTMLDivElement>>>({});
   const [layout, setLayout] = useState<WidgetLayout>(() => {
-    try { return parseWidgetLayout(localStorage.getItem(widgetStorageKey(userId))); } catch { return defaultWidgetLayout(); }
+    try { return loadWidgetLayout(userId); } catch { return defaultWidgetLayout(); }
   });
   const [draft, setDraft] = useState<WidgetLayout | null>(null);
   const [dragging, setDragging] = useState<WidgetId | null>(null);
@@ -66,7 +66,7 @@ export function WidgetLayoutProvider({ userId, enabled, children }: { userId: st
   }, [enabled, layout, draft, dragging, arrange, restore]);
   useEffect(() => {
     cleanupRef.current?.(); keyboardId.current = null; setDraft(null); setDragging(null);
-    try { setLayout(parseWidgetLayout(localStorage.getItem(widgetStorageKey(userId)))); } catch { setLayout(defaultWidgetLayout()); }
+    try { setLayout(loadWidgetLayout(userId)); } catch { setLayout(defaultWidgetLayout()); }
   }, [userId]);
   useEffect(() => { if (!enabled) { cleanupRef.current?.(); keyboardId.current = null; setDraft(null); setDragging(null); } }, [enabled]);
   useEffect(() => () => cleanupRef.current?.(), []);
