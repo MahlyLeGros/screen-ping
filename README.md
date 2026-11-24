@@ -1,138 +1,47 @@
-# Screen Ping
+# Screen Ping Desktop
 
-Windows tray app + web dashboard: approved friends can send images, videos, and sounds to your screen in real time.
+Public source for the Screen Ping Windows receiver and tray application. The installed client connects to the hosted platform at [screenping.xyz](https://screenping.xyz). The website and API live in the private [`MahlyLeGros/screen-ping-platform`](https://github.com/MahlyLeGros/screen-ping-platform) repository.
 
-This repository is the open-source code for [screenping.xyz](https://screenping.xyz). Licensed under the [MIT License](LICENSE).
+This repository contains the Electron client, the Tauri client, desktop build and release tools, and `shared/`. The desktop repository is the canonical source for `shared/`; changes to shared code must also be copied into the private platform repository.
 
-**Do not commit** real emails, usernames, passwords, or deploy credentials. Copy `.env.example` and `deploy/deploy.config.example.ps1` and keep the filled-in files local.
+## Build the Electron app
 
-## Folder map
-
-| Folder | What it is |
-|--------|------------|
-| **`desktop/`** | Electron receiver app (overlay + tray) |
-| **`server/`** | FastAPI + Socket.IO backend |
-| **`web/`** | React dashboard (send pings, friends) |
-| **`shared/`** | Code shared by web + desktop caption UI |
-| **`brand/`** | Source logo used to generate icons |
-| **`deploy/`** | VPS deploy / nginx / publish desktop updates |
-| **`scripts/`** | Build helpers (not needed every day) |
-| **`docs/`** | Extra docs (friend setup text, etc.) |
-| **`out/`** | Generated share zips (safe to delete) |
-
-## Everyday starters (root)
-
-| Script | What it does |
-|--------|----------------|
-| **`start-local.bat`** | API + site on `localhost:8000` (no ngrok) |
-| **`start-online.bat`** | Server + ngrok public URL |
-| **`start-all.bat`** | Rebuild web+desktop, then server+ngrok+app |
-| **`setup-server.bat`** | First-time Python venv for the API |
-| **`build-installer.bat`** | Build `desktop/release/Screen Ping Setup *.exe` |
-
-Requires [ngrok](https://ngrok.com) on PATH for the online scripts.
-
-## Desktop app
-
-```cmd
+```powershell
 cd desktop
-rebuild.bat          :: npm install + build
-start-app.bat        :: launch
-build-installer.bat  :: Windows .exe installer
-```
-
-Or: `npm install` → `npm run build` → `npm start`  
-Dev with hot reload: `npm run dev`
-
-Installer output: `desktop/release/`
-
-## Manual setup
-
-### 1. Backend
-
-```bash
-cd server
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn run:app --reload --host 0.0.0.0 --port 8000
-```
-
-### 2. Web dashboard
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-Open http://localhost:5173
-
-### 3. Desktop
-
-```cmd
-cd desktop
-npm install
+npm ci
 npm run build
 npm start
 ```
 
-## Publish / VPS
+For development with hot reload, run `npm run dev` from `desktop`. To create a Windows installer, run `npm run dist`; output is in `desktop/release/`.
 
-See **`deploy/`** — especially `deploy.bat` and `publish-desktop.bat`.
+## Build the Tauri app
 
-Auto-update feed: `https://screenping.xyz/desktop/updates/`
+The Tauri shell uses the renderer in `desktop/` and the Rust core in `desktop-tauri/`.
 
-1. Bump `version` in `desktop/package.json`
-2. `deploy\publish-desktop.bat`
-3. `deploy\deploy.bat` if server/web changed too
+```powershell
+cd desktop
+npm ci
+npm run build
+cd ..\desktop-tauri
+node scripts/prepare-renderer.mjs
+npx tauri build
+```
 
-## Video links and excerpts
+The GitHub Actions workflow tests the Rust core and builds the Windows installer.
 
-The dashboard supports anonymous public TikTok, YouTube/Shorts and Instagram
-Reel extraction when the corresponding platform is enabled. Authentication,
-private content, playlists, live streams and photo posts are not supported.
-Some public links may still be blocked by the platform; use a video file instead.
+## Publish a desktop update
 
-New sources are limited to 20 minutes. Sources longer than 30 seconds require
-an explicit 2–30 second excerpt, including uploaded and saved video files.
-The private source remains available for 30 minutes of inactivity so an excerpt
-can be changed without downloading it again. Only the finalized excerpt is sent.
+1. Set the version in `desktop/package.json`.
+2. Run `deploy/publish-desktop.bat` (or pass a CI-built setup installer).
+3. The publisher signs the installer locally, publishes it under `https://screenping.xyz/desktop/updates/`, and writes the update manifests to the platform VPS data folder. The API reads those manifests through its read-only Docker mount.
 
-Docker Compose starts one `import-worker` with FFmpeg, pinned Node.js and pinned
-yt-dlp/EJS dependencies. The worker uses local files for FFmpeg and restricts
-all extraction/download connections to public addresses on platform domains.
-Limits: 256 MiB remote source, 50 MiB local source/result, 2 GiB reserved temporary
-storage, 20 queued operations, 10 minutes preparation and 3 minutes clipping.
+The catalog source files are in `deploy/desktop-feed/`. Never commit the private update signing key or VPS credentials. The signing key stays local and is never uploaded to the VPS.
 
-Deployment flags in the root `.env` (all default to false):
+## Shared modules
 
-- `VIDEO_CLIP_ENABLED`: the new excerpt/upload workflow.
-- `TIKTOK_IMPORT_ENABLED`, `YOUTUBE_IMPORT_ENABLED`, `INSTAGRAM_IMPORT_ENABLED`:
-  independently control extraction from each platform.
+`shared/` is copied into both repositories. Make changes here first, then copy the same change into the private platform repository.
 
-Keep new platform flags off until a real public import and synchronized delivery
-have been verified from your deployment. Existing TikTok imports retain their
-legacy behavior until expiration. No desktop update is required for new clips
-limited to 30 seconds. For manual local development, start `python clip_worker.py`
-from `server` in addition to the API (FFmpeg/FFprobe and Node.js must be installed).
-Offline codec/timing checks: `python check_video_clips.py` in the worker image.
+## License
 
-## Extra scripts
-
-| Script | Purpose |
-|--------|---------|
-| `scripts\build-all.bat` | Rebuild web + desktop only |
-| `scripts\package-for-friend.bat` | Build installer + zip into `out/` |
-| `scripts\test-logo.bat` | Pack desktop + local server to test icons |
-
-## Troubleshooting
-
-| Error | Fix |
-|-------|-----|
-| `'npm' is not recognized` | Install [Node.js LTS](https://nodejs.org), restart CMD |
-| `Cannot find module` | `npm install` inside `desktop` or `web` |
-| `dist\main\main.js` missing | `npm run build` in `desktop` |
-| Installer / symlink error | `set CSC_IDENTITY_AUTO_DISCOVERY=false` then `npm run dist` |
-| Login `fetch failed` | Start `start-local.bat` if the app uses `localhost:8000` |
-| Update `app-update.yml` missing | Reinstall from a fresh `npm run dist` build |
+MIT. See [LICENSE](LICENSE).

@@ -3,27 +3,19 @@ setlocal
 cd /d "%~dp0\.."
 set "ROOT=%CD%"
 
-where npm >nul 2>&1
-if errorlevel 1 (
-  echo ERROR: npm not found. Install Node.js from https://nodejs.org
-  exit /b 1
-)
-
-echo [build] Web dashboard...
-cd /d "%ROOT%\web"
-if not exist "node_modules\" call npm install
-if errorlevel 1 exit /b 1
-call npm run build
-if errorlevel 1 exit /b 1
-
-echo.
-echo [build] Desktop app...
+echo [build] Electron desktop app...
 cd /d "%ROOT%\desktop"
-if not exist "node_modules\" call npm install
+if not exist "node_modules\" call npm ci
 if errorlevel 1 exit /b 1
 call npm run build
 if errorlevel 1 exit /b 1
 
 echo.
-echo Build complete.
+echo [build] Prepare Tauri renderer...
+cd /d "%ROOT%\desktop-tauri"
+call node scripts/prepare-renderer.mjs
+if errorlevel 1 exit /b 1
+
+echo.
+echo Desktop builds prepared.
 exit /b 0

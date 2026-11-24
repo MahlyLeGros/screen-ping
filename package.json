@@ -1,13 +1,10 @@
 {
-  "name": "screen-ping",
+  "name": "screen-ping-desktop",
   "private": true,
   "scripts": {
-    "dev:server": "cd server && .venv\\Scripts\\uvicorn run:app --reload --host 0.0.0.0 --port 8000",
-    "dev:web": "cd web && npm run dev",
-    "dev:desktop": "cd desktop && npm run dev",
-    "build:web": "cd web && npm run build",
-    "build:desktop": "cd desktop && npm run build",
-    "dist:desktop": "cd desktop && npm run dist",
-    "docker:up": "docker compose up -d --build"
+    "dev": "cd desktop && npm run dev",
+    "build": "cd desktop && npm run build",
+    "dist": "cd desktop && npm run dist",
+    "test:delivery": "cd desktop && npm run test:delivery"
   }
 }
