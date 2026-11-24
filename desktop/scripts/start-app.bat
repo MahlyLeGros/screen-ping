@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0.."
 echo Starting Screen Ping desktop app...
-echo Make sure the server is running (start-local.bat) if you use localhost.
+echo Packaged builds connect to screenping.xyz. Local development servers live in the private platform repository.
 echo.
 
 if not exist "dist\main\main.js" (

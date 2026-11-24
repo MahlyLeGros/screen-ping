@@ -62,12 +62,12 @@ signing key), starting the installer with `/S /UPDATE /R`.
 On the PC that has `deploy\deploy.config.ps1` and
 `deploy\update-signing-private.pem`:
 
-1. Bump `desktop/package.json` and push; wait for the "Tauri desktop app"
+1. Bump `desktop/package.json` and push; wait for the "Screen Ping Desktop"
    workflow and download its `screen-ping-tauri` artifact.
 2. Drop the unzipped artifact (or its `*-setup.exe`) on
    `deploy\publish-desktop.bat`. Run it alone to build locally instead
    (needs Rust).
-3. Commit the updated `server/app/desktop/latest.json` and `versions.json`.
+3. Commit the updated `deploy/desktop-feed/latest.json` and `versions.json`.
 
 The script refuses an installer whose version differs from
 `desktop/package.json`.

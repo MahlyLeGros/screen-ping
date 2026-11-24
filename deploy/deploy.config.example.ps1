@@ -4,4 +4,4 @@
 $DeployVpsHost = "YOUR_VPS_HOST"
 $DeployVpsUser = "YOUR_VPS_USER"
 $DeployVpsPassword = "YOUR_PASSWORD_HERE"
-$DeployRemotePath = "/home/YOUR_VPS_USER/screen-ping"
+$DeployRemotePath = "/home/YOUR_VPS_USER/screen-ping-platform"

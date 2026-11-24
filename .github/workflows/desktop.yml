@@ -1,33 +1,25 @@
-name: Tauri desktop app
+name: Screen Ping Desktop
 
 on:
   push:
+    branches: [main]
     paths:
+      - "desktop/**"
       - "desktop-tauri/**"
-      - "desktop/renderer/**"
       - "shared/**"
-      - "web/**"
-      - "docker-compose.yml"
-      - ".github/workflows/tauri-proto.yml"
+      - "deploy/desktop-feed/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "desktop-tauri/**"
+      - "shared/**"
+      - "deploy/desktop-feed/**"
+      - ".github/workflows/desktop.yml"
   workflow_dispatch:
 
 jobs:
-  web-build:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm run build
-
-  core-tests:
+  desktop-core:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -51,7 +43,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Build renderer (desktop/renderer, unchanged)
+      - name: Build renderer
         working-directory: desktop
         run: |
           npm ci --no-audit --no-fund --ignore-scripts
@@ -62,12 +54,6 @@ jobs:
       - name: Build installer
         working-directory: desktop-tauri
         run: npx --yes @tauri-apps/cli@2 build
-      - name: Sizes
-        shell: pwsh
-        working-directory: desktop-tauri
-        run: |
-          Get-ChildItem src-tauri/target/release/*.exe, src-tauri/target/release/bundle/nsis/*.exe |
-            ForEach-Object { "{0}  {1:N1} Mo" -f $_.Name, ($_.Length / 1MB) }
       - uses: actions/upload-artifact@v4
         with:
           name: screen-ping-tauri

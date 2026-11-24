@@ -157,7 +157,7 @@ $latestJson = @{
     update_protocol = "screenping://update"
 } | ConvertTo-Json -Compress
 
-$latestJsonDir = Join-Path $Root "server\app\desktop"
+$latestJsonDir = Join-Path $DeployDir "desktop-feed"
 if (-not (Test-Path $latestJsonDir)) {
     New-Item -ItemType Directory -Path $latestJsonDir -Force | Out-Null
 }
@@ -214,7 +214,7 @@ try {
     $staging = "/home/$($cfg.User)/desktop-publish-staging"
 
     Write-Step "Preparing staging folder on VPS..."
-    $prep = Invoke-SSHCommand -SessionId $session.SessionId -Command "mkdir -p $staging/v/$version" -TimeOut 120
+    $prep = Invoke-SSHCommand -SessionId $session.SessionId -Command "mkdir -p $staging/v/$version $staging/catalog $($cfg.RemotePath)/data/desktop-updates" -TimeOut 120
     if ($prep.ExitStatus -ne 0) {
         throw "Failed to create staging folder on VPS"
     }
@@ -223,14 +223,14 @@ try {
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $signaturePath -RemoteDir $staging
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $latestYml -RemoteDir $staging
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $versionFeedYml -RemoteDir "$staging/v/$version"
-    Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $latestJsonPath -RemoteDir "$($cfg.RemotePath)/server/app/desktop"
-    Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $versionsPath -RemoteDir "$($cfg.RemotePath)/server/app/desktop"
+    Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $latestJsonPath -RemoteDir "$staging/catalog"
+    Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $versionsPath -RemoteDir "$staging/catalog"
     $bootstrapLocal = Join-Path $DeployDir "bootstrap-update-feeds.py"
     Send-ScpFile -VpsHost $cfg.Host -Credential $credential -LocalFile $bootstrapLocal -RemoteDir $staging
 
     Write-Step "Installing files into web root..."
     $installerRemote = "$remoteUpdates/$installerName"
-    $appDesktop = "$($cfg.RemotePath)/server/app/desktop"
+    $runtimeFeeds = "$($cfg.RemotePath)/data/desktop-updates"
     $moveCmd = @"
 set -e
 sudo mkdir -p '$remoteUpdates/v/$version'
@@ -238,14 +238,19 @@ sudo cp -f '$staging/$installerName' '$installerRemote'
 sudo cp -f '$staging/$installerName.sig' '$installerRemote.sig'
 sudo cp -f '$staging/latest.yml' '$remoteUpdates/latest.yml'
 sudo cp -f '$staging/v/$version/latest.yml' '$remoteUpdates/v/$version/latest.yml'
+sudo cp -f '$staging/catalog/latest.json' '$remoteUpdates/latest.json'
+sudo cp -f '$staging/catalog/versions.json' '$remoteUpdates/versions.json'
+sudo mkdir -p '$runtimeFeeds'
+sudo cp -f '$staging/catalog/latest.json' '$runtimeFeeds/latest.json'
+sudo cp -f '$staging/catalog/versions.json' '$runtimeFeeds/versions.json'
 test -s '$installerRemote'
 test -s '$installerRemote.sig'
 test -s '$remoteUpdates/v/$version/latest.yml'
-sudo python3 '$staging/bootstrap-update-feeds.py' '$remoteUpdates' '$appDesktop/versions.json'
-sudo cp -f '$remoteUpdates/versions.json' '$appDesktop/versions.json' 2>/dev/null || true
+sudo python3 '$staging/bootstrap-update-feeds.py' '$remoteUpdates' '$runtimeFeeds/versions.json'
+sudo cp -f '$runtimeFeeds/versions.json' '$remoteUpdates/versions.json'
 sudo chown -R www-data:www-data /var/www/screenping/desktop
 sudo chmod -R a+rX /var/www/screenping/desktop
-rm -rf '$staging/$installerName' '$staging/$installerName.sig' '$staging/latest.yml' '$staging/v' '$staging/bootstrap-update-feeds.py'
+rm -rf '$staging/$installerName' '$staging/$installerName.sig' '$staging/latest.yml' '$staging/v' '$staging/catalog' '$staging/bootstrap-update-feeds.py'
 "@
     # SSH executes on Linux; CRLF would become part of remote filenames/arguments.
     $moveCmd = $moveCmd.Replace("`r`n", "`n").Replace("`r", "`n")

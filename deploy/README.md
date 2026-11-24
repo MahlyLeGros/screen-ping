@@ -1,28 +1,17 @@
-# Deploy / VPS
+# Desktop release tools
 
-Scripts that talk to the production server (`screenping.xyz`).
+This folder contains the desktop update publisher and its tracked update catalog. Website and API deployment tools are maintained in the private `screen-ping-platform` repository.
 
-| Script | Purpose |
-|--------|---------|
-| `deploy.bat` / `deploy.ps1` | Ship server + web to the VPS |
-| `publish-desktop.bat` | Build installer and upload update feed |
-| `update-vps.bat` | Quick VPS update |
-| `backup-vps.bat` | Backup remote data |
-| `fix-nginx.bat` / `fix-api.bat` | Repair nginx / API |
-| `check-server.ps1` / `diagnose.ps1` / `debug-vps.ps1` | Diagnostics |
-| `nginx-screenping.conf` | Nginx site config |
-| `deploy.config.example.ps1` | Copy to `deploy.config.ps1` (gitignored) |
+| File | Purpose |
+|---|---|
+| `publish-desktop.bat` / `.ps1` | Sign and publish a desktop installer and update metadata |
+| `desktop-feed/latest.json` | Current desktop release metadata |
+| `desktop-feed/versions.json` | Supported upgrade versions |
+| `bootstrap-update-feeds.py` | Generate Electron updater feeds from published installers |
+| `deploy.config.example.ps1` | Example local VPS settings; copy to the ignored `deploy.config.ps1` |
 
-Copy `deploy.config.example.ps1` → `deploy.config.ps1` and fill in host/credentials before deploying.
+The publisher expects `deploy.config.ps1` and the update-signing private key to be available locally. It signs the installer on this PC. The key is never copied to the VPS. Point `DeployRemotePath` in the local config at the platform checkout on the VPS so that manifests can be installed under `data/desktop-updates`.
 
-## Update-signing key
+Desktop releases publish the installer and Electron feeds to `/var/www/screenping/desktop/updates`, then publish `latest.json` and `versions.json` to both that static directory and the platform's read-only API data directory. The API endpoints stay unchanged.
 
-Desktop updates from 1.0.62 onward are authenticated with Ed25519. The private
-key is `deploy/update-signing-private.pem`; it is intentionally ignored by Git.
-Back it up in an encrypted password manager or on an offline encrypted drive
-before publishing 1.0.62. Losing it means installed clients cannot verify future
-updates. Never copy it to the VPS or commit it. The public key embedded in
-`desktop/main/updatePublicKey.ts` is safe to publish.
-
-Do not rotate this key after publishing without first shipping a client that
-trusts both the old and new public keys.
+Never commit real deploy credentials or the private signing key. The public verification key in `desktop/main/updatePublicKey.ts` is safe to publish.
