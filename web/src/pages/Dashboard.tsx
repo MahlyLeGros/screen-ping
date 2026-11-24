@@ -361,6 +361,7 @@ export default function DashboardPage() {
   const [receiverIds, setReceiverIds] = useState<string[]>([]);
   const [drawReceiverIds, setDrawReceiverIds] = useState<string[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
   const [desktopOnlineStable, setDesktopOnlineStable] = useState(false);
   const offlinePresenceTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const [file, setFile] = useState<File | null>(null);
@@ -414,7 +415,6 @@ export default function DashboardPage() {
   const isLayerCompose = imageLayers.length > 0 && !file;
   const isSoundOnly = Boolean(soundFile && !file && imageLayers.length === 0);
   const isVideo = importedVideo || (file ? guessMediaKind(file) === "video" : false);
-  const isImage = file ? guessMediaKind(file) === "image" : false;
   const hasVisualMedia = importedVideo || isVisualMediaFile(file) || imageLayers.length > 0;
   const hasSound = Boolean(soundFile);
   const overlaySound = hasVisualMedia && soundFile ? soundFile : undefined;
@@ -739,6 +739,7 @@ export default function DashboardPage() {
   async function refreshCurrentUser() {
     try {
       const next = await api.me();
+      currentUserIdRef.current = next.id;
       setCurrentUser((prev) => {
         if (prev && Object.entries(next).every(([key, value]) => prev[key as keyof User] === value)) return prev;
         return next;
@@ -760,11 +761,16 @@ export default function DashboardPage() {
   useEffect(() => {
     void refreshDesktopLatest();
     const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
       void refreshDesktopLatest();
       void refreshCurrentUser();
     };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, []);
 
   useEffect(() => {
@@ -802,6 +808,7 @@ export default function DashboardPage() {
       setStatus(`Message ${data.messageId.slice(0, 8)}... → ${data.status}${data.reason ? ` (${data.reason})` : ""}`);
       void api.history().then(setHistory).catch(() => {});
     }, (data) => {
+      if (data.isOnline && data.userId === currentUserIdRef.current) void refreshCurrentUser();
       const pending = offlinePresenceTimers.current.get(data.userId);
       if (data.isOnline) {
         if (pending) window.clearTimeout(pending);
@@ -828,17 +835,6 @@ export default function DashboardPage() {
       disconnectSocket();
     };
   }, []);
-
-  useEffect(() => {
-    if (tab !== "send") return;
-    void refreshCurrentUser();
-    void refreshDesktopLatest();
-    const timer = setInterval(() => {
-      void refreshCurrentUser();
-      void refreshDesktopLatest();
-    }, 10_000);
-    return () => clearInterval(timer);
-  }, [tab]);
 
   async function ensureFreshImport(previous: MediaImportJob): Promise<MediaImportJob> {
     try {
@@ -1495,28 +1491,15 @@ export default function DashboardPage() {
                     onChange={setAudioDelayMs}
                   />
                 )}
-                <div className="flex flex-col gap-2 pt-1">
-                  {waitingForLocalSend && <div className="flex items-center justify-between gap-2" role="status">
-                    <span className="text-xs text-slate-400">Preparing to send…</span>
-                    <button type="button" className="btn-secondary" onClick={cancelLocalSend}>Cancel send</button>
-                  </div>}
-                  <button type="submit" disabled={!canSend} className="btn-primary compose-inline-send w-full">
-                    {loading
-                      ? "Sending…"
-                      : receiverIds.length > 1
-                        ? `Send to ${receiverIds.length} friends`
-                        : "Send ping"}
+                {hasSendMedia && (!importLocksMedia || importedVideo) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveInput((v) => !v)}
+                    className="btn-secondary w-full md:hidden"
+                  >
+                    Save ping
                   </button>
-                  {hasSendMedia && (!importLocksMedia || importedVideo) && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveInput((v) => !v)}
-                      className="btn-secondary w-full"
-                    >
-                      Save ping
-                    </button>
-                  )}
-                </div>
+                )}
                 {status && (
                   <p
                     role="status"
@@ -1632,6 +1615,26 @@ export default function DashboardPage() {
               </TimingPanel>
               </MovableWidget>
               </WidgetPane>
+              <div className="compose-send-actions hidden md:flex">
+                {waitingForLocalSend && <div className="flex items-center justify-between gap-2" role="status">
+                  <span className="text-xs text-slate-400">Preparing to send…</span>
+                  <button type="button" className="btn-secondary" onClick={cancelLocalSend}>Cancel send</button>
+                </div>}
+                <div className="flex gap-2">
+                  <button type="submit" disabled={!canSend} className="btn-primary min-w-0 flex-1">
+                    {loading
+                      ? "Sending…"
+                      : receiverIds.length > 1
+                        ? `Send to ${receiverIds.length} friends`
+                        : "Send ping"}
+                  </button>
+                  {hasSendMedia && (!importLocksMedia || importedVideo) && (
+                    <button type="button" onClick={() => setShowSaveInput((v) => !v)} className="btn-secondary shrink-0">
+                      Save
+                    </button>
+                  )}
+                </div>
+              </div>
             </aside>
             <div className="compose-mobile-send">
               <button type="submit" disabled={!canSend} className="btn-primary w-full">

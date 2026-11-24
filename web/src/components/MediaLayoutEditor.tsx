@@ -252,7 +252,7 @@ const PreviewMedia = memo(function PreviewMedia({
   previewUrl: string;
   isVideo: boolean;
   objectFit: ObjectFitMode;
-  videoRef: React.RefObject<HTMLVideoElement | null>;
+  videoRef: RefObject<HTMLVideoElement>;
 }) {
   const cls = `preview-media ${mediaClass(objectFit)}`;
 

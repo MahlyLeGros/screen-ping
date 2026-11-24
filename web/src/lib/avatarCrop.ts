@@ -59,17 +59,13 @@ export function getInitialAvatarCrop(
 
   const baseScale = Math.max(containerSize / imageWidth, containerSize / imageHeight);
   const scale = baseScale * zoom;
-  const displayW = imageWidth * scale;
   const displayH = imageHeight * scale;
-  const maxX = Math.max(0, (displayW - containerSize) / 2);
   const maxY = Math.max(0, (displayH - containerSize) / 2);
 
   let x = 0;
   let y = 0;
   if (imageHeight > imageWidth * 1.05) {
     y = maxY * 0.65;
-  } else if (imageWidth > imageHeight * 1.05) {
-    x = 0;
   }
 
   return clampAvatarCrop({ x, y, zoom }, imageWidth, imageHeight, containerSize);

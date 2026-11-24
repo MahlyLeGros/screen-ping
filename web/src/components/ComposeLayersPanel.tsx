@@ -112,30 +112,6 @@ function ComposeLayersPanel({
     e.target.value = "";
   }
 
-  const layerIdFromPoint = useCallback((clientX: number, clientY: number): string | null => {
-    const list = listRef.current;
-    if (!list) return null;
-
-    const rows = Array.from(list.querySelectorAll<HTMLElement>("[data-layer-id]"));
-    if (rows.length === 0) return null;
-
-    const listRect = list.getBoundingClientRect();
-    if (clientX < listRect.left || clientX > listRect.right) return null;
-
-    for (let i = 0; i < rows.length; i++) {
-      const rect = rows[i].getBoundingClientRect();
-      const prevBottom = i > 0 ? rows[i - 1].getBoundingClientRect().bottom : rect.top;
-      const nextTop = i < rows.length - 1 ? rows[i + 1].getBoundingClientRect().top : rect.bottom;
-      const top = i > 0 ? (prevBottom + rect.top) / 2 : rect.top;
-      const bottom = i < rows.length - 1 ? (rect.bottom + nextTop) / 2 : rect.bottom;
-
-      if (clientY >= top && clientY <= bottom) {
-        return rows[i].dataset.layerId ?? null;
-      }
-    }
-    return null;
-  }, []);
-
   const finishDrag = useCallback(
     (draggedId: string | null, targetId: string | null) => {
       if (draggedId && targetId && draggedId !== targetId) {

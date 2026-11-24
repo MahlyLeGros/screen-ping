@@ -6,6 +6,7 @@ services:
 
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: screenping
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,6 +21,7 @@ services:
 
   server:
     build: ./server
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 5s

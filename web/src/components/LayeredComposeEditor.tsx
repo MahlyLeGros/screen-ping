@@ -3,6 +3,7 @@ import type { CaptionLayout, MediaLayout, ObjectFitMode } from "../../../shared/
 import {
   clampCaptionLayout,
   clampLayout,
+  DEFAULT_LAYOUT,
   DEFAULT_CAPTION_FONT_SIZE_PCT,
   captionLayoutToMedia,
 } from "../../../shared/types";
@@ -252,9 +253,9 @@ function LayeredComposeEditor({
               : resolvedObjectFit(draft, live?.objectFit),
         };
       }
-      return live ?? clampLayout({});
+      return live ?? clampLayout(DEFAULT_LAYOUT);
     }
-    return clampLayout({});
+    return clampLayout(DEFAULT_LAYOUT);
   }
 
   function setLayoutForTarget(target: LayerTarget, next: MediaLayout) {
@@ -382,7 +383,7 @@ function LayeredComposeEditor({
       if (capHit.mode !== "none") {
         e.preventDefault();
         el.setPointerCapture(e.pointerId);
-        dragRef.current = buildDragState("caption", capHit, ptr, captionLayoutToMedia(captionDraftRef.current), containerRect, cw, ch);
+        dragRef.current = buildDragState("caption", { mode: capHit.mode, corner: capHit.corner }, ptr, captionLayoutToMedia(captionDraftRef.current), containerRect, cw, ch);
         setActiveTarget("caption");
         setActiveCorner(capHit.corner ?? null);
         return;
@@ -421,7 +422,7 @@ function LayeredComposeEditor({
 
     e.preventDefault();
     el.setPointerCapture(e.pointerId);
-    dragRef.current = buildDragState(layerId, hit, ptr, liveLayout, containerRect, cw, ch);
+    dragRef.current = buildDragState(layerId, { mode: hit.mode, corner: hit.corner }, ptr, liveLayout, containerRect, cw, ch);
   };
 
   handlerBag.current.onPointerMove = (e: PointerEvent) => {

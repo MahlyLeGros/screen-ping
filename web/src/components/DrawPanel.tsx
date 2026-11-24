@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import type { Friend, User } from "../lib/api";
 import { pointerPctFromRect, rectFromDom } from "../lib/layoutEditorMath";
@@ -71,7 +71,6 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
   const [durationMs, setDurationMs] = useState(DEFAULT_DURATION_MS);
   const [status, setStatus] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -470,7 +469,6 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
       setStatus("Pick at least one online friend (or yourself).");
       return null;
     }
-    setBusy(true);
     try {
       const nextId = makeSessionId();
       const initialTargets = [...receiverIdsRef.current];
@@ -499,11 +497,10 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
       setStatus(err instanceof Error ? err.message : "Could not start draw session.");
       return null;
     } finally {
-      setBusy(false);
     }
   }
 
-  function beginBrushResize(e: PointerEvent<HTMLCanvasElement>) {
+  function beginBrushResize(e: ReactPointerEvent<HTMLCanvasElement>) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     e.preventDefault();
@@ -578,7 +575,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     paintBrushCursor();
   }
 
-  async function onPointerDown(e: PointerEvent<HTMLCanvasElement>) {
+  async function onPointerDown(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (e.button === 2) {
       beginBrushResize(e);
       return;
@@ -633,7 +630,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     queuePoint(pointerPctFromRect(live.x, live.y, liveRect));
   }
 
-  function onPointerMove(e: PointerEvent<HTMLCanvasElement>) {
+  function onPointerMove(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (brushResizeRef.current) {
       updateBrushResize(e);
       return;
@@ -648,7 +645,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     queuePoint(pointerPctFromRect(p.x, p.y, rect));
   }
 
-  function onPointerEnter(e: PointerEvent<HTMLCanvasElement>) {
+  function onPointerEnter(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (brushResizeRef.current || drawingRef.current) return;
     clearPtrShift();
     moveBrushCursor(e.clientX, e.clientY);
@@ -662,7 +659,7 @@ export default function DrawPanel({ friends, currentUser, selectedIds: receiverI
     if (el) el.hidden = true;
   }
 
-  function endStroke(e: PointerEvent<HTMLCanvasElement>) {
+  function endStroke(e: ReactPointerEvent<HTMLCanvasElement>) {
     if (brushResizeRef.current) {
       endBrushResize(e);
       return;

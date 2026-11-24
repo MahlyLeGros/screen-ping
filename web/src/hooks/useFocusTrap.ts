@@ -19,11 +19,12 @@ export function useFocusTrap(active: boolean, onEscape?: () => void) {
     restoreFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const container = containerRef.current;
     if (!container) return;
+    const activeContainer: HTMLElement = container;
 
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
-    const focusables = getFocusable(container);
+    const focusables = getFocusable(activeContainer);
     focusables[0]?.focus();
 
     function onKeyDown(e: KeyboardEvent) {
@@ -34,7 +35,7 @@ export function useFocusTrap(active: boolean, onEscape?: () => void) {
       }
       if (e.key !== "Tab") return;
 
-      const items = getFocusable(container);
+      const items = getFocusable(activeContainer);
       if (items.length === 0) {
         e.preventDefault();
         return;
@@ -45,7 +46,7 @@ export function useFocusTrap(active: boolean, onEscape?: () => void) {
       const current = document.activeElement;
 
       if (e.shiftKey) {
-        if (current === first || !container.contains(current)) {
+        if (current === first || !activeContainer.contains(current)) {
           e.preventDefault();
           last.focus();
         }
