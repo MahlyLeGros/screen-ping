@@ -1491,28 +1491,15 @@ export default function DashboardPage() {
                     onChange={setAudioDelayMs}
                   />
                 )}
-                <div className="flex flex-col gap-2 pt-1">
-                  {waitingForLocalSend && <div className="flex items-center justify-between gap-2" role="status">
-                    <span className="text-xs text-slate-400">Preparing to send…</span>
-                    <button type="button" className="btn-secondary" onClick={cancelLocalSend}>Cancel send</button>
-                  </div>}
-                  <button type="submit" disabled={!canSend} className="btn-primary compose-inline-send w-full">
-                    {loading
-                      ? "Sending…"
-                      : receiverIds.length > 1
-                        ? `Send to ${receiverIds.length} friends`
-                        : "Send ping"}
+                {hasSendMedia && (!importLocksMedia || importedVideo) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSaveInput((v) => !v)}
+                    className="btn-secondary w-full md:hidden"
+                  >
+                    Save ping
                   </button>
-                  {hasSendMedia && (!importLocksMedia || importedVideo) && (
-                    <button
-                      type="button"
-                      onClick={() => setShowSaveInput((v) => !v)}
-                      className="btn-secondary w-full"
-                    >
-                      Save ping
-                    </button>
-                  )}
-                </div>
+                )}
                 {status && (
                   <p
                     role="status"
@@ -1628,6 +1615,26 @@ export default function DashboardPage() {
               </TimingPanel>
               </MovableWidget>
               </WidgetPane>
+              <div className="compose-send-actions hidden md:flex">
+                {waitingForLocalSend && <div className="flex items-center justify-between gap-2" role="status">
+                  <span className="text-xs text-slate-400">Preparing to send…</span>
+                  <button type="button" className="btn-secondary" onClick={cancelLocalSend}>Cancel send</button>
+                </div>}
+                <div className="flex gap-2">
+                  <button type="submit" disabled={!canSend} className="btn-primary min-w-0 flex-1">
+                    {loading
+                      ? "Sending…"
+                      : receiverIds.length > 1
+                        ? `Send to ${receiverIds.length} friends`
+                        : "Send ping"}
+                  </button>
+                  {hasSendMedia && (!importLocksMedia || importedVideo) && (
+                    <button type="button" onClick={() => setShowSaveInput((v) => !v)} className="btn-secondary shrink-0">
+                      Save
+                    </button>
+                  )}
+                </div>
+              </div>
             </aside>
             <div className="compose-mobile-send">
               <button type="submit" disabled={!canSend} className="btn-primary w-full">

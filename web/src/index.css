@@ -1959,7 +1959,6 @@
   .compose-library-body { height: auto; gap: 1rem; }
   .mobile-library-summary { display: list-item; cursor: pointer; min-height: 44px; padding: 0.5rem; }
   .compose-side-left:not([open]) > .compose-library-body { display: none; }
-  .compose-inline-send { display: none; }
   .compose-mobile-send { display: block; position: fixed; bottom: 0; left: 0; right: 0; z-index: 50; padding: 0.75rem max(1rem, env(safe-area-inset-left)) calc(0.75rem + env(safe-area-inset-bottom)); background: #09090e; border-top: 1px solid #30303d; }
   .compose-preview-slot { width: 100%; max-height: none; aspect-ratio: 16 / 9; }
   .compose-preview-editor--dropzone .compose-preview-frame { width: 100%; height: 100%; aspect-ratio: 16 / 9; }
@@ -1984,6 +1983,7 @@
 }
 
 @media (min-width: 1280px) {
+  .compose-side-right-body.widget-pane { flex: 1 1 0%; height: auto; }
   .compose-side-left {
     display: flex;
     flex-direction: column;
@@ -2113,3 +2113,4 @@
     box-shadow: none;
   }
 }
+.compose-send-actions { flex: 0 0 auto; flex-direction: column; gap: 0.5rem; border-top: 1px solid #30303d; padding-top: 0.75rem; }
